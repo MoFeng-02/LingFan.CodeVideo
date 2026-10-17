@@ -17,7 +17,7 @@ import type {
 } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
 import { rateSegments, resolveWarp } from "./warp";
-import { seededRandom, synthEnvelopePoints } from "./synth";
+import { seededRandom, synthAmpEnvelopePoints } from "./synth";
 import { evaluateVoice } from "./voice-timeline";
 
 /** 资源加载：把 clip url 变成 AudioBuffer（宿主注入，通常 fetch + decodeAudioData） */
@@ -352,6 +352,8 @@ export class WebAudioOutput implements AudioOutput {
   /**
    * 程序化音源排程：振荡器/噪声源 + ADSR 自动化 + 声音增益，
    * 与导出端共用同一组包络折点（时值由 spec.durationMs 决定）。
+   * 包络与声音增益各自一个增益节点串联：两个线性斜坡相乘即导出端的逐样本乘积，
+   * 合进同一个节点则只能按折点取积再线性插值，段内会与导出端偏离。
    * 预览端振荡器不复刻 rate/warp 的逐样本细节，音高与时长一致。
    */
   private scheduleSynth(voice: AudioVoice): LiveVoice | null {
@@ -360,12 +362,10 @@ export class WebAudioOutput implements AudioOutput {
     if (tl.endMs <= tl.startMs) return null;
     const start = Math.max(this.ctxSecOf(tl.startMs), this.ctx.currentTime);
     const end = this.ctxSecOf(tl.endMs);
+    const ampGain = this.ctx.createGain();
+    this.applyGain(ampGain.gain, synthAmpEnvelopePoints(spec), end);
     const gain = this.ctx.createGain();
-    this.applyGain(
-      gain.gain,
-      combineGainPoints(synthEnvelopePoints(spec), tl.gainPoints),
-      end,
-    );
+    this.applyGain(gain.gain, tl.gainPoints, end);
     let src: AudioScheduledSourceNode;
     let osc: OscillatorNode | null = null;
     let rateParam: AudioParam | null = null;
@@ -396,7 +396,8 @@ export class WebAudioOutput implements AudioOutput {
       rateParam = osc.detune;
       src = osc;
     }
-    src.connect(gain);
+    src.connect(ampGain);
+    ampGain.connect(gain);
     let tail: AudioNode = gain;
     if (Math.abs(tl.pan) > 0) {
       const panner = this.ctx.createStereoPanner();
@@ -490,31 +491,6 @@ export class WebAudioOutput implements AudioOutput {
   nowMs(): Ms {
     return (this.ctx.currentTime - this.startedAtSec) * 1000;
   }
-}
-
-/** 折线合并：两组增益折点（ADSR × 声音增益）在并集上相乘 */
-function combineGainPoints(
-  a: readonly { atMs: Ms; gain: number }[],
-  b: readonly { atMs: Ms; gain: number }[],
-): readonly { atMs: Ms; gain: number }[] {
-  const times = [...new Set([...a, ...b].map((p) => p.atMs))].sort(
-    (x, y) => x - y,
-  );
-  const at = (pts: readonly { atMs: Ms; gain: number }[], ms: Ms): number => {
-    if (pts.length === 0) return 1;
-    if (ms <= pts[0]!.atMs) return pts[0]!.gain;
-    for (let i = 1; i < pts.length; i++) {
-      const p1 = pts[i]!;
-      if (ms <= p1.atMs) {
-        const p0 = pts[i - 1]!;
-        const span = p1.atMs - p0.atMs;
-        const k = span <= 0 ? 1 : (ms - p0.atMs) / span;
-        return p0.gain + (p1.gain - p0.gain) * k;
-      }
-    }
-    return pts[pts.length - 1]!.gain;
-  };
-  return times.map((ms) => ({ atMs: ms, gain: at(a, ms) * at(b, ms) }));
 }
 
 /** 确定性混响 IR（衰减噪声；预览端音色近似，时序与导出端一致） */

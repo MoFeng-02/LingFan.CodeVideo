@@ -15,8 +15,10 @@ export type {
 export { MemoryFrameSink } from "./capture/memory-sink";
 export { OfflineAudioMixer } from "./audio/offline-mixer";
 export {
+  DEFAULT_SYNTH_GAIN,
   renderSynth,
   seededRandom,
+  synthAmpEnvelopePoints,
   synthEnvelopeAt,
   synthEnvelopePoints,
 } from "./audio/synth";

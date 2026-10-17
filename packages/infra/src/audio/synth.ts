@@ -26,6 +26,9 @@ const DEFAULT_ENVELOPE = {
   releaseMs: 80,
 };
 
+/** 缺省音量（spec.gain 未给时） */
+export const DEFAULT_SYNTH_GAIN = 0.4;
+
 /** ADSR 幅度（0..1），入参为源内局部毫秒 */
 export function synthEnvelopeAt(spec: SynthSpec, localMs: Ms): number {
   const env = spec.envelope ?? DEFAULT_ENVELOPE;
@@ -67,6 +70,20 @@ export function synthEnvelopePoints(
   return pts;
 }
 
+/**
+ * ADSR 折线乘以音量：预览端把这条折线写进增益节点，导出端逐样本乘同一幅度，
+ * 两端因此得到相同的振幅包络（波形本身各由振荡器/合成器产生）。
+ */
+export function synthAmpEnvelopePoints(
+  spec: SynthSpec,
+): readonly { atMs: Ms; gain: number }[] {
+  const amp = Math.max(0, spec.gain ?? DEFAULT_SYNTH_GAIN);
+  return synthEnvelopePoints(spec).map((p) => ({
+    atMs: p.atMs,
+    gain: p.gain * amp,
+  }));
+}
+
 function waveSample(wave: Waveform, phase: number, rnd: () => number): number {
   switch (wave) {
     case "sine":
@@ -103,7 +120,7 @@ export function renderSynth(
   const rnd = seededRandom(12345);
   const detune = spec.detune ?? 0;
   const freq = spec.freq * Math.pow(2, detune / 1200);
-  const gain = Math.max(0, spec.gain ?? 0.4);
+  const gain = Math.max(0, spec.gain ?? DEFAULT_SYNTH_GAIN);
   const dt = (1 / sampleRate) * TAU * freq;
   let phase = 0;
   for (let f = 0; f < frames; f++) {
