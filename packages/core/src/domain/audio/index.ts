@@ -1,8 +1,12 @@
 export {
   clip,
+  curve,
+  fadeIn,
+  fadeOut,
   gain,
   pan,
   loop,
+  ramp,
   rate,
   warp,
   makeVoice,

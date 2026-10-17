@@ -11,6 +11,8 @@ import type {
   AudioOptions,
   AudioRate,
   AudioVoice,
+  Envelope,
+  EnvelopePoint,
   Ms,
   WarpPoint,
 } from "@lingfan-video/contracts";
@@ -36,7 +38,11 @@ export function clip(url: string): AudioClip {
 /** 音量与淡入淡出（线性增益；fade 在时间线毫秒域） */
 export function gain(
   value: number,
-  env?: { readonly fadeIn?: Ms; readonly fadeOut?: Ms },
+  env?: {
+    readonly fadeIn?: Ms;
+    readonly fadeOut?: Ms;
+    readonly envelope?: Envelope;
+  },
 ): AudioGain {
   if (!Number.isFinite(value) || value < 0)
     throw violation(`gain(${value}) 须为 ≥0 的有限数`);
@@ -46,9 +52,74 @@ export function gain(
     throw violation(`gain.fadeIn=${String(fadeIn)} 须为 ≥0 的有限毫秒`);
   if (fadeOut !== undefined && !isMs(fadeOut))
     throw violation(`gain.fadeOut=${String(fadeOut)} 须为 ≥0 的有限毫秒`);
-  return fadeIn === undefined && fadeOut === undefined
-    ? { value }
-    : { value, fadeIn, fadeOut };
+  return {
+    value,
+    ...(fadeIn === undefined ? {} : { fadeIn }),
+    ...(fadeOut === undefined ? {} : { fadeOut }),
+    ...(env?.envelope ? { envelope: env.envelope } : {}),
+  };
+}
+
+const envelopePoints = (
+  points: ReadonlyArray<EnvelopePoint>,
+): readonly EnvelopePoint[] => {
+  if (points.length === 0) throw violation("envelope 至少需要一个折点");
+  for (const p of points) {
+    if (!Number.isFinite(p.atMs) || p.atMs < 0)
+      throw violation(`envelope 折点时间 ${String(p.atMs)} 须为 ≥0 的有限毫秒`);
+    if (!Number.isFinite(p.value) || p.value < 0)
+      throw violation(`envelope 折点值 ${String(p.value)} 须为 ≥0 的有限数`);
+  }
+  return points.map((p) => ({ ...p }));
+};
+
+/**
+ * 线性包络：局部 0 → from，局部 ms → to，其后保持 to。
+ * `ramp(0, 1, 300)` = 300ms 淡入到满；`ramp(1, 0, 300)` = 300ms 降到静音。
+ */
+export function ramp(from: number, to: number, ms: Ms): Envelope {
+  return {
+    points: envelopePoints([
+      { atMs: 0, value: from },
+      { atMs: ms, value: to },
+    ]),
+  };
+}
+
+/** 分段线性包络：折点须按局部毫秒严格递增；首个折点之前取首值。 */
+export function curve(
+  ...points: ReadonlyArray<readonly [Ms, number]>
+): Envelope {
+  if (points.length === 0) throw violation("curve() 至少需要一个折点");
+  let prev = -Infinity;
+  const out: EnvelopePoint[] = [];
+  for (const [atMs, value] of points) {
+    if (!Number.isFinite(atMs) || atMs < 0)
+      throw violation(`curve 折点时间 ${String(atMs)} 须为 ≥0 的有限毫秒`);
+    if (atMs <= prev)
+      throw violation(`curve 折点时间 ${atMs} 未严格递增（前一点 ${prev}）`);
+    prev = atMs;
+    out.push({ atMs, value });
+  }
+  return { points: envelopePoints(out) };
+}
+
+/** 淡入（B6，ramp 的语法糖）：局部 0 → 1，ms 处满。 */
+export function fadeIn(ms: Ms): Envelope {
+  return ramp(0, 1, ms);
+}
+
+/**
+ * 淡出（B6）：终点前 ms 开始从 1 降到 0，与声音实际终点对齐
+ * （终点由源播完/stop/终界裁定，包络不需要预先知道时长）。
+ */
+export function fadeOut(ms: Ms): Envelope {
+  return {
+    points: envelopePoints([
+      { atMs: ms, value: 1, fromEnd: true },
+      { atMs: 0, value: 0, fromEnd: true },
+    ]),
+  };
 }
 
 /** 立体声摆位：-1（全左）~ 1（全右） */

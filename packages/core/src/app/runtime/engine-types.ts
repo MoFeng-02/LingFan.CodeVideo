@@ -65,6 +65,8 @@ export interface TimelineState {
   audioVoices: MutableVoice[];
   /** 声音 id 序号（确定性分配） */
   voiceSeq: number;
+  /** B3 事件去重登记（确定性键：作用域 + 单元实例 + 迭代/实例 id） */
+  onceKeys: Set<string>;
   form3: Map<string, { iteration: number; iterStart: Ms }>;
   spans: ChainSpan[];
   timelineEnd: Ms;

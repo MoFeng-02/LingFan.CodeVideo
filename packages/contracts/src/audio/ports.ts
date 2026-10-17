@@ -15,11 +15,29 @@ export interface WarpPoint {
   srcMs: Ms | "end";
 }
 
+/** 包络折点：声音局部毫秒 → 乘子；`fromEnd` 时 atMs 表示「离声音终点还有多少毫秒」 */
+export interface EnvelopePoint {
+  readonly atMs: Ms;
+  readonly value: number;
+  readonly fromEnd?: boolean;
+}
+
+/**
+ * 音量包络（B5）：在声音局部时间上的分段线性乘子，首点前取首值、末点后取末值。
+ * 与基础增益相乘（`gain(0.5, { envelope: fadeIn(200) })` = 从 0 升到 0.5）。
+ * 纯数据，构造期校验；导出逐样本取值、预览折算成同一组折点——两端同源。
+ */
+export interface Envelope {
+  readonly points: readonly EnvelopePoint[];
+}
+
 /** 音量与包络：线性增益；fade 在时间线毫秒域（不随变速伸缩） */
 export interface AudioGain {
   readonly value: number;
   readonly fadeIn?: Ms;
   readonly fadeOut?: Ms;
+  /** 逐段包络（与 value 相乘；折点为声音局部时间） */
+  readonly envelope?: Envelope;
 }
 
 /** 立体声摆位：-1 全左 ~ 1 全右（非立体声输出恒居中） */

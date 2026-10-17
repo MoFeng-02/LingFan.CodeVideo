@@ -13,6 +13,8 @@
 import type {
   AudioRate,
   AudioVoice,
+  Envelope,
+  EnvelopePoint,
   Ms,
   WarpPoint,
 } from "@lingfan-video/contracts";
@@ -353,7 +355,49 @@ function buildGainPoints(
   }
   // 无淡出时不额外插入归零折点：声音到 endMs 即截断，
   // 预览端的硬切归零由节点终点处理（否则会被误读成「全段线性衰减」）。
-  return dedupe(raw);
+  const folded = voice.gain.envelope
+    ? applyEnvelope(raw, voice.gain.envelope, startMs, endLocal)
+    : raw;
+  return dedupe(folded);
+}
+
+/**
+ * 把包络乘进基础增益折线：在「基础折点 ∪ 包络折点」上取乘积，
+ * 于是导出逐样本与预览 AudioParam 折线读到的是同一组点（双端同源）。
+ */
+function applyEnvelope(
+  base: readonly GainPoint[],
+  envelope: Envelope,
+  startMs: Ms,
+  endLocal: Ms,
+): GainPoint[] {
+  const times = new Set<Ms>([startMs, startMs + endLocal]);
+  for (const p of base) times.add(p.atMs);
+  for (const p of envelope.points)
+    times.add(startMs + resolveEnvelopeAt(p, endLocal));
+  const out: GainPoint[] = [];
+  for (const atMs of [...times].sort((a, b) => a - b)) {
+    out.push({
+      atMs,
+      gain:
+        sampleRaw(base, atMs) * envelopeAt(envelope, atMs - startMs, endLocal),
+    });
+  }
+  return out;
+}
+
+/** 折点的解析时间（局部毫秒；fromEnd 从声音终点倒算） */
+function resolveEnvelopeAt(p: EnvelopePoint, endLocal: Ms): Ms {
+  const t = p.fromEnd ? endLocal - p.atMs : p.atMs;
+  return clamp(t, 0, Math.max(0, endLocal));
+}
+
+/** 包络在局部毫秒处的取值（首点前取首值、末点后取末值） */
+function envelopeAt(envelope: Envelope, local: Ms, endLocal: Ms): number {
+  const resolved = envelope.points
+    .map((p) => ({ atMs: resolveEnvelopeAt(p, endLocal), gain: p.value }))
+    .sort((a, b) => a.atMs - b.atMs);
+  return sampleLinear(resolved, local, Number.POSITIVE_INFINITY);
 }
 
 type StopOp = Extract<AudioVoice["ops"][number], { kind: "stop" }>;
@@ -381,7 +425,7 @@ function dedupe(points: GainPoint[]): GainPoint[] {
   return out;
 }
 
-function sampleRaw(points: GainPoint[], atMs: Ms): number {
+function sampleRaw(points: readonly GainPoint[], atMs: Ms): number {
   return sampleLinear(points, atMs, Number.POSITIVE_INFINITY);
 }
 

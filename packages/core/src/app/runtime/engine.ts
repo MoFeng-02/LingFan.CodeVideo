@@ -26,6 +26,7 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     spawnChains: [],
     audioVoices: [],
     voiceSeq: 0,
+    onceKeys: new Set<string>(),
     form3: new Map(),
     spans: [],
     timelineEnd: 0,

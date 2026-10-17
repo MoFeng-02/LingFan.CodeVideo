@@ -32,7 +32,18 @@ export {
 } from "./domain/time-math/time-math";
 export { poolOf, loopPool } from "./domain/simulation/types";
 /** 音频组合子：能力即上下文的「写法糖」（构造期强类型校验） */
-export { clip, gain, pan, loop, rate, warp } from "./domain/audio";
+export {
+  clip,
+  curve,
+  fadeIn,
+  fadeOut,
+  gain,
+  loop,
+  pan,
+  ramp,
+  rate,
+  warp,
+} from "./domain/audio";
 export type { SceneInternal, SimNode } from "./domain/simulation/types";
 
 /** 预览/导出通用装配：建引擎 + 装 CPU 位图来源（GPU painter 由独立适配器承载） */

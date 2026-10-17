@@ -5,6 +5,9 @@ import type {
   FrameIndex,
   LoopContext,
   Ms,
+  OnceEnv,
+  OnceFn,
+  OnceScope,
   RenderError,
   StepContext,
   WaitContext,
@@ -201,6 +204,48 @@ function selfDisposeOf(deps: EvalDeps, t: Ms, hostKey: string) {
     disposeUnit(deps.state, t, hostKey, options);
 }
 
+/** 确定性去重键（不含随机/墙钟：同程序必同键） */
+function onceKeyOf(
+  scope: OnceScope,
+  sceneId: string,
+  hostKey: string,
+  chain: SpawnChain | null,
+  iteration: number | undefined,
+): string {
+  switch (scope) {
+    case "scene":
+      return `scene:${sceneId}`;
+    case "spawn":
+      return `spawn:${sceneId}/${chain?.key ?? "main"}`;
+    case "iteration":
+      return `iter:${sceneId}/${hostKey}#${iteration ?? 0}`;
+    case "unit":
+      return `unit:${sceneId}/${hostKey}`;
+  }
+}
+
+/** B3 事件去重：同一作用域首次触发才执行；能力集只给发声与自消杀 */
+function onceOf(
+  deps: EvalDeps,
+  t: Ms,
+  sceneId: string,
+  hostKey: string,
+  chain: SpawnChain | null,
+  iteration: number | undefined,
+): OnceEnv["once"] {
+  const dispose = selfDisposeOf(deps, t, hostKey);
+  const once = (a: OnceScope | OnceFn, b?: OnceFn): void => {
+    const scope: OnceScope = typeof a === "function" ? "unit" : a;
+    const fn = typeof a === "function" ? a : b;
+    if (!fn) throw makeRenderError("step_throw", sceneId, t, "once 缺少回调");
+    const key = onceKeyOf(scope, sceneId, hostKey, chain, iteration);
+    if (deps.state.onceKeys.has(key)) return;
+    deps.state.onceKeys.add(key);
+    fn({ audio: audioOf(deps, t), dispose });
+  };
+  return once as OnceEnv["once"];
+}
+
 /** step 单元：StepContext + FrameState 发布 */
 function evalStep(
   deps: EvalDeps,
@@ -238,6 +283,7 @@ function evalStep(
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),
+    once: onceOf(deps, t, span.scene.id, hostKey, chain, undefined),
   };
   invoke(deps, span, unit, ctx, t);
 }
@@ -278,6 +324,7 @@ function evalLoopIter(
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),
+    once: onceOf(deps, t, span.scene.id, hostKey, chain, unit.loop!.iteration),
   };
   invoke(deps, span, unit, ctx, t);
 }
@@ -309,6 +356,7 @@ function evalWait(
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),
+    once: onceOf(deps, t, span.scene.id, hostKey, null, undefined),
   };
   deps.state.inCallback = true;
   try {
@@ -364,6 +412,7 @@ function evalForm3(
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),
+    once: onceOf(deps, t, span.scene.id, hostKey, chain, cur.iteration),
   };
   invoke(deps, span, unit, ctx, t);
 }
