@@ -4,6 +4,7 @@ import type { ExportResult, Exporter } from "../export";
 import type { FrameState, ValidationError } from "../feedback";
 import type { AssetSource } from "../asset";
 import type { AudioClock, AudioOutput } from "../audio";
+import type { FrameSource } from "../capture";
 
 /** 渲染后端 */
 export type Backend = "webgpu" | "webgl" | "2d";
@@ -26,6 +27,11 @@ export interface RenderOptions {
   audio?: AudioClock;
   /** 音频输出（注入 = 预览端实时发声：登记期预排 + 运行期发射即时发声） */
   audioOutput?: AudioOutput;
+  /**
+   * 帧像素来源（缺省 = 从绘制目标 canvas 的 2D 上下文回读；
+   * GPU/离屏/自定义合成路径注入自己的实现）
+   */
+  painter?: FrameSource;
   headless?: boolean;
   onProgress?(doneFrames: number, totalFrames: number): void;
 }

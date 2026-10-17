@@ -20,3 +20,10 @@ export interface FrameSink {
   ): void | Promise<void>;
   finalize(): Promise<void>;
 }
+
+/**
+ * 帧像素来源：把「这一刻画布上画了什么」取成位图交给引擎。
+ * 单一事实来源是绘制目标本身（ctx.canvas）——缺省实现即从画布 2D 上下文回读；
+ * GPU/离屏/自定义合成路径注入自己的实现（自绘纹理、后处理）。
+ */
+export type FrameSource = (frame: FrameIndex, timestampMs: Ms) => FrameBitmap;

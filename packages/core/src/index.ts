@@ -54,16 +54,39 @@ function assemble(opts: RenderOptions): {
     assets: opts.assets ?? makeDefaultAssets(),
     audioOut: opts.audioOutput,
   });
-  // 位图来源：每帧新建（确定性不依赖对象复用；ImageBitmap 路径归 GPU 适配器）。
-  // 全部为零 = 占位：预览画面由 step 回调直接画在 canvas 上，此位图只占协议位；
-  // 真像素源（离屏渲染 → ImageBitmap）归渲染适配器实现。
-  engine.setPainter((f, t) => {
-    void f;
-    void t;
-    const data = new Uint8ClampedArray(opts.width * opts.height * 4);
-    return { data, width: opts.width, height: opts.height };
-  });
+  // 帧像素来源：单一事实来源是绘制目标本身（step 回调画在 canvas 上，帧从画布回读）。
+  // 注入 painter = GPU/离屏/自定义合成路径自绘；缺省 = 2D 回读；无 2D 上下文（Node 无 canvas 实现）
+  // 时退回零位图，保证模拟与计时仍可跑（此时导出帧为空白，属配置缺失而非静默错误）。
+  engine.setPainter(
+    opts.painter ?? readbackPainter(canvas, opts) ?? blankPainter(opts),
+  );
   return { engine, canvas };
+}
+
+/** 从绘制目标的 2D 上下文回读整帧（每帧一次，不缓存对象） */
+function readbackPainter(
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+  opts: RenderOptions,
+): ((f: FrameIndex, t: Ms) => FrameBitmap) | null {
+  if (typeof canvas.getContext !== "function") return null;
+  const ctx = canvas.getContext("2d") as
+    CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (!ctx || typeof ctx.getImageData !== "function") return null;
+  return () => {
+    const image = ctx.getImageData(0, 0, opts.width, opts.height);
+    return { data: image.data, width: image.width, height: image.height };
+  };
+}
+
+/** 无绘制后端时的占位位图（全 0） */
+function blankPainter(
+  opts: RenderOptions,
+): (f: FrameIndex, t: Ms) => FrameBitmap {
+  return () => ({
+    data: new Uint8ClampedArray(opts.width * opts.height * 4),
+    width: opts.width,
+    height: opts.height,
+  });
 }
 
 /** render（RenderFn 契约实现）：exporter 注入 = 导出模式；缺省 = 预览模式 */

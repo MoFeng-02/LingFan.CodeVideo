@@ -261,6 +261,12 @@ async function play(): Promise<void> {
       exporter: sink,
       audioOutput: out,
       headless: false,
+      // 预览端画面就是这块 canvas（实时可见），不需要逐帧回读；导出模式缺省会回读。
+      painter: () => ({
+        data: new Uint8ClampedArray(stage.width * stage.height * 4),
+        width: stage.width,
+        height: stage.height,
+      }),
       onProgress: (done, total) => {
         hud.textContent = `帧 ${done}/${total} · 声音 ${out.voiced}`;
       },
