@@ -16,3 +16,4 @@ export {
 } from "./combinators";
 export { assertAutomation, automationErrors } from "./automation";
 export { assertSynth, synthErrors } from "./synth-spec";
+export { synthVoiceOptions } from "./synth-voice";

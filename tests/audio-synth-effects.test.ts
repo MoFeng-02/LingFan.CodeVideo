@@ -96,10 +96,19 @@ describe("程序化音源", () => {
     expect(Array.from(a.data)).toEqual(Array.from(b.data));
   });
 
-  it("登记期声明的声音带 seed：离线混音用的就是声明种子那份样本", async () => {
+  it("登记期声明的声音带 seed 与音量：离线混音与合成样本逐样本一致", async () => {
     const engine = makeEngine();
+    const spec = {
+      wave: "noise" as const,
+      freq: 440,
+      durationMs: 200,
+      gain: 0.8,
+      seed: 4242,
+      // 常幅包络：混音结果与合成样本之间只剩音量这一层关系
+      envelope: { attackMs: 0, decayMs: 0, sustain: 1, releaseMs: 0 },
+    };
     const scene = start(200, (env) => {
-      env.synth({ wave: "noise", freq: 440, durationMs: 200, seed: 4242 });
+      env.synth(spec);
       env.step(200, () => {});
     });
     const summary = await engine.run(scene, {
@@ -108,6 +117,8 @@ describe("程序化音源", () => {
     });
     const v = summary.audioVoices[0]!;
     expect(v.synth?.seed).toBe(4242);
+    // 时间线侧的增益保持中性：声音的音量已经写在声音自己的参数里
+    expect(v.gain.value).toBe(1);
     const mixer = new OfflineAudioMixer(
       {
         async decode() {
@@ -120,18 +131,12 @@ describe("程序化音源", () => {
       durationMs: 200,
       voices: [v],
     });
-    const declared = renderSynth(v.synth!, 48_000, 2);
-    // 缺省种子那份样本必须与声明种子不同，否则下面的比值断言没有区分力
-    const fallback = renderSynth({ ...v.synth!, seed: undefined }, 48_000, 2);
-    const i1 = 1000;
-    const i2 = 5000;
-    expect(Math.abs(declared.data[i1]! - fallback.data[i1]!)).toBeGreaterThan(
-      1e-3,
-    );
-    // 混音结果 = 样本 × 同一条增益曲线：两个采样点的比值一致即证明取的是声明种子那份
-    const r1 = sample!.data[i1]! / declared.data[i1]!;
-    const r2 = sample!.data[i2]! / declared.data[i2]!;
-    expect(r1).toBeCloseTo(r2, 5);
+    const expected = renderSynth(spec, 48_000, 2);
+    // 声明的音量在合成时乘一次，混音不再叠乘：两者逐样本相等
+    for (const i of [1000, 5000]) {
+      expect(Math.abs(expected.data[i]!)).toBeGreaterThan(1e-3);
+      expect(sample!.data[i]!).toBeCloseTo(expected.data[i]!, 6);
+    }
   });
 
   it("ADSR 起音有斜坡、中段达峰、尾段释放归零", () => {
@@ -170,7 +175,8 @@ describe("程序化音源", () => {
     const [a, b] = summary.audioVoices;
     expect(a!.synth?.wave).toBe("sine");
     expect(a!.startMs).toBe(0);
-    expect(a!.gain.value).toBeCloseTo(0.4, 6);
+    // 音量属于声音本身（`synth.gain`），声音的时间线增益保持中性，避免乘两次
+    expect(a!.gain.value).toBe(1);
     expect(b!.synth?.wave).toBe("square");
     expect(b!.startMs).toBe(0);
   });

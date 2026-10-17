@@ -40,7 +40,11 @@ export interface SynthSpec {
    * 只影响 noise：同 seed 必同样本，换 seed 换一条噪声；其余波形忽略。
    */
   readonly seed?: number;
-  /** 线性音量（缺省 `DEFAULT_SYNTH_GAIN`） */
+  /**
+   * 声音自身的线性音量（缺省 `DEFAULT_SYNTH_GAIN`）：合成时乘一次。
+   * 时间线侧另有 voice 的增益（缺省 1，`setGain`/`kill` 在其上叠乘），最终电平 = 两者之积；
+   * 同一个数字不会被应用两次。
+   */
   readonly gain?: number;
   /** 声像 -1..1（缺省 0） */
   readonly pan?: number;

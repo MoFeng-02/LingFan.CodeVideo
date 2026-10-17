@@ -1,4 +1,5 @@
 import { SYNTH_CLIP } from "../../domain/audio/synth-clip";
+import { synthVoiceOptions } from "../../domain/audio/synth-voice";
 import type {
   AudioGraphEnv,
   FrameIndex,
@@ -222,17 +223,7 @@ function audioOf(deps: EvalDeps, t: Ms): Pick<AudioEnv, "audio" | "synth"> {
     audio: (clip, options) => emitAudio(deps, clip, options, t),
     // 程序化音源：同一套声音记录（synth 字段给混音层一个确定性生成器）
     synth: (spec) =>
-      emitAudio(
-        deps,
-        SYNTH_CLIP,
-        {
-          gain: { value: spec.gain ?? 0.4 },
-          pan: { value: spec.pan ?? 0 },
-          ...(spec.bus ? { bus: spec.bus } : {}),
-        },
-        t,
-        spec,
-      ),
+      emitAudio(deps, SYNTH_CLIP, synthVoiceOptions(spec), t, spec),
   };
 }
 
