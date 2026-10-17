@@ -107,23 +107,58 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
     sink,
     options.onProgress,
   );
-  // 音频：程序（登记期 + 运行期声音）→ AudioClock 混音 → exporter.writeAudio（缺省 = 纯视频导出）
-  if (options.audio && summary.audioVoices.length > 0 && exporter.writeAudio) {
-    const clock = options.audio;
-    const samples = await clock.renderProgram({
-      durationMs: summary.durationMs,
-      voices: summary.audioVoices,
-    });
-    // 块序列自 0 起连续：按序拼接即整轨，布局取自时钟声明（不猜采样率/声道数）
-    for (const s of samples)
-      await exporter.writeAudio(s.data, clock.sampleRate, clock.channels);
-  }
+  // 音轨必须在封装收尾之前写入：帧 → 声 → finalize，顺序即封装顺序
+  await writeAudioTrack(
+    exporter,
+    options,
+    summary.audioVoices,
+    summary.durationMs,
+  );
+  await sink.flushExporter();
   return {
     frames: summary.frames,
     durationMs: summary.durationMs,
     output: await sink.getOutput(),
   };
 };
+
+/**
+ * 写音轨：程序（登记期 + 运行期声音）→ AudioClock 混合成样本 → exporter.writeAudio。
+ * 有声音却没有音轨出口时报错，不静默丢掉声音。
+ */
+async function writeAudioTrack(
+  exporter: NonNullable<RenderOptions["exporter"]>,
+  options: RenderOptions,
+  voices: readonly import("@lingfan-video/contracts").AudioVoice[],
+  durationMs: Ms,
+): Promise<void> {
+  if (voices.length === 0) return;
+  if (!options.audio) {
+    // 预览端声音走 audioOutput（实时发声），没有 AudioClock 是正常的
+    if (!exporter.writeAudio) return;
+    throw Object.assign(
+      new Error(
+        `场景有 ${voices.length} 个声音，但未注入 RenderOptions.audio（AudioClock）：` +
+          "导出器支持音轨时会要求给出混音时钟",
+      ),
+      { name: "SpecViolation" },
+    );
+  }
+  const write = exporter.writeAudio;
+  if (!write)
+    throw Object.assign(
+      new Error(
+        `导出器 ${exporter.impl} 不支持音轨（writeAudio 未实现）：` +
+          "有声音的场景请换支持音频的导出器，或去掉 RenderOptions.audio",
+      ),
+      { name: "SpecViolation" },
+    );
+  const clock = options.audio;
+  const samples = await clock.renderProgram({ durationMs, voices });
+  // 块序列自 0 起连续：按序拼接即整轨，布局取自时钟声明（不猜采样率/声道数）
+  for (const s of samples)
+    await write.call(exporter, s.data, clock.sampleRate, clock.channels);
+}
 
 function makeMissingExporter(): Error {
   const err = new Error(
@@ -143,10 +178,18 @@ function makeHeadlessCanvas(
   return { width, height } as unknown as OffscreenCanvas;
 }
 
-/** Exporter → FrameSink 适配：引擎直出的真时间戳透传 exporter（变帧率下 index→时间戳非均匀映射）；ExportResult 经 getOutput 恰好一次取回 */
+/**
+ * Exporter → FrameSink 适配：引擎直出的真时间戳透传 exporter（变帧率下 index→时间戳非均匀映射）。
+ * 封装收尾分两步——引擎调用 finalize（视为「帧已交付完毕」），组合根写完音轨后调 flushExporter
+ * 才真正 finalize：音频块必须出现在 moov 之前，所以顺序不能交给两条独立路径各调一次。
+ */
 function exporterAdapter(
   exporter: NonNullable<RenderOptions["exporter"]>,
-): FrameSink & { getOutput(): Promise<ExportResult> } {
+): FrameSink & {
+  flushExporter(): Promise<void>;
+  getOutput(): Promise<ExportResult>;
+} {
+  let delivered = false;
   let output: ExportResult | undefined;
   return {
     writeFrame(
@@ -157,12 +200,20 @@ function exporterAdapter(
       return exporter.writeFrame(frame, timestampMs);
     },
     finalize: async () => {
+      delivered = true;
+    },
+    flushExporter: async () => {
+      if (!delivered)
+        throw Object.assign(
+          new Error("flushExporter 在帧交付完成前调用（组合根内部契约）"),
+          { name: "SpecViolation" },
+        );
       output = await exporter.finalize();
     },
     getOutput: async () => {
       if (!output)
         throw Object.assign(
-          new Error("getOutput 在 finalize 前调用（组合根内部契约）"),
+          new Error("getOutput 在最终封装前调用（组合根内部契约）"),
           { name: "SpecViolation" },
         );
       return output;

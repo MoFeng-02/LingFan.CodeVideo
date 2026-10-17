@@ -2,6 +2,8 @@
  * 预览用合成音频资产：不依赖外部文件，全部按确定性公式生成（循环无缝、可复现）。
  * 供 WebAudioPlayer 的 loader 使用；导出端真实资产走解码器，两者语义一致（样本=时间线纯函数）。
  */
+import type { AudioDecoder } from "@lingfan-video/infra";
+
 export interface SynthClipSpec {
   url: string;
   durationMs: number;
@@ -87,5 +89,39 @@ export function makeSynthLoader(ctx: AudioContext) {
     }
     cache.set(url, buffer);
     return buffer;
+  };
+}
+
+/**
+ * 导出端解码器：与预览共用同一批合成音源公式，直接产出交错 Float32 PCM（不经 AudioContext）。
+ * 预览用 makeSynthLoader → AudioBuffer，导出用本函数 → OfflineAudioMixer；样本公式是同一份，
+ * 因此「预览听到的」与「导出得到的」是同一段音频。
+ */
+export function makeSynthDecoder(sampleRate = 48_000): AudioDecoder {
+  const cache = new Map<string, Float32Array>();
+  return {
+    async decode(clip) {
+      const spec = CLIPS.find((c) => c.url === clip.url);
+      if (!spec)
+        throw new Error(
+          `synth decoder：未登记的音源 '${clip.url}'（示例内置 pad/blip/tick/whoosh）`,
+        );
+      const frames = Math.round((spec.durationMs / 1000) * sampleRate);
+      let data = cache.get(spec.url);
+      if (!data) {
+        data = new Float32Array(frames * spec.channels);
+        for (let ch = 0; ch < spec.channels; ch += 1)
+          for (let f = 0; f < frames; f += 1)
+            data[f * spec.channels + ch] = spec.sample(f, ch, sampleRate);
+        cache.set(spec.url, data);
+      }
+      return {
+        clip,
+        sampleRate,
+        channels: spec.channels,
+        durationMs: spec.durationMs,
+        data,
+      };
+    },
   };
 }

@@ -50,13 +50,24 @@
       button:hover {
         background: #26263a;
       }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #row {
+        display: flex;
+        gap: 10px;
+      }
     </style>
   </head>
   <body>
     <h1>Code Video · 三幕剧本实时预览</h1>
     <canvas id="stage" width="640" height="360"></canvas>
     <div id="hud">按「播放」开始</div>
-    <button id="play">▶ 播放</button>
+    <div id="row">
+      <button id="play">▶ 播放</button>
+      <button id="export">⬇ 导出 MP4</button>
+    </div>
     <script type="module" src="/main.ts"></script>
   </body>
 </html>

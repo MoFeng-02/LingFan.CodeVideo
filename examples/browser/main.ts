@@ -11,7 +11,11 @@
  */
 import { start } from "@lingfan-video/core";
 import { render } from "@lingfan-video/core";
-import { WebAudioOutput } from "@lingfan-video/infra";
+import {
+  OfflineAudioMixer,
+  WebAudioOutput,
+  WebCodecsExporter,
+} from "@lingfan-video/infra";
 import { clip, gain, loop, pan, rate, warp } from "@lingfan-video/core";
 import type {
   AudioHandle,
@@ -25,7 +29,7 @@ import type {
   Scene,
   StepContext,
 } from "@lingfan-video/contracts";
-import { makeSynthLoader } from "./audio-assets";
+import { makeSynthDecoder, makeSynthLoader } from "./audio-assets";
 
 /** 预览导出器：不编码（impl/format = frames），只把每帧按真实时间戳排队放出（变帧率下按绝对时间播放） */
 class PacedPreviewExporter implements Exporter {
@@ -193,6 +197,7 @@ void act3;
 const stage = document.getElementById("stage") as HTMLCanvasElement;
 const hud = document.getElementById("hud") as HTMLDivElement;
 const playBtn = document.getElementById("play") as HTMLButtonElement;
+const exportBtn = document.getElementById("export") as HTMLButtonElement;
 let paused = false;
 let busy = false;
 
@@ -245,6 +250,7 @@ async function play(): Promise<void> {
   if (busy) return;
   busy = true;
   playBtn.disabled = true;
+  exportBtn.disabled = true;
   playBtn.textContent = "渲染中…";
   paused = false;
   sink.reset();
@@ -275,6 +281,7 @@ async function play(): Promise<void> {
   } finally {
     busy = false;
     playBtn.disabled = false;
+    exportBtn.disabled = false;
     playBtn.textContent = "▶ 重播";
   }
 }
@@ -282,3 +289,72 @@ async function play(): Promise<void> {
 hud.textContent = "点「播放」开始（音频需用户手势解锁）";
 playBtn.disabled = false;
 playBtn.textContent = "▶ 播放";
+
+// ---------- 导出（mp4 = H.264 视频 + AAC 音轨） ----------
+
+exportBtn.addEventListener("click", () => void exportMp4());
+
+/**
+ * 导出 mp4：与预览同一份剧本、同一批合成音源，差异只在消费端——
+ * 预览用 paced sink + WebAudioOutput 实时放；导出用 WebCodecsExporter（H.264 + AAC → mp4）
+ * 与 OfflineAudioMixer（离线混出整条音轨，不依赖 AudioContext / 用户手势）。
+ */
+async function exportMp4(): Promise<void> {
+  if (busy) return;
+  if (
+    typeof VideoEncoder === "undefined" ||
+    typeof AudioEncoder === "undefined"
+  ) {
+    hud.textContent = "当前浏览器不支持 WebCodecs 编码（需要 Chrome/Edge 94+）";
+    return;
+  }
+  busy = true;
+  playBtn.disabled = true;
+  exportBtn.disabled = true;
+  exportBtn.textContent = "导出中…";
+  hud.textContent = "编码中…";
+  try {
+    const exporter = new WebCodecsExporter({
+      width: stage.width,
+      height: stage.height,
+      fps: 30,
+    });
+    // 音频：离线混音 → 交错 Float32 → AAC；样本公式与预览完全相同
+    const audio = new OfflineAudioMixer(makeSynthDecoder(48_000), {
+      sampleRate: 48_000,
+      channels: 2,
+    });
+    const result = await render(act1, {
+      fps: 30,
+      width: stage.width,
+      height: stage.height,
+      canvas: stage,
+      exporter,
+      audio,
+      headless: false,
+      onProgress: (done, total) => {
+        hud.textContent = `导出 ${done}/${total} 帧…`;
+      },
+    });
+    const output = result.output;
+    if (!output) throw new Error("导出未返回结果（exporter 未 finalize）");
+    const blob = output.output;
+    if (!(blob instanceof Blob)) throw new Error("导出器未返回 Blob");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "code-video.mp4";
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    hud.textContent =
+      `导出完成：${result.frames} 帧 / ${result.durationMs}ms · ` +
+      `${(blob.size / 1024).toFixed(0)} KB · 已开始下载`;
+  } catch (err) {
+    hud.textContent = `导出失败：${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    busy = false;
+    playBtn.disabled = false;
+    exportBtn.disabled = false;
+    exportBtn.textContent = "⬇ 导出 MP4";
+  }
+}

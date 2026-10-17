@@ -1,7 +1,9 @@
 /**
  * WebCodecs 导出适配器（Exporter 的 'webcodecs' 实现）：
- * VideoFrame 编码 + mp4 封装（简单 MP4 muxer：avc1 裸流 → 可播放文件）。
- * 仅浏览器环境可用（VideoFrame/AudioEncoder 为平台 API）；Node 下组合根应选 frames。
+ * VideoEncoder 编 H.264、AudioEncoder 编 AAC-LC，Mp4Muxer 封装为 mp4。
+ * 仅浏览器环境可用（WebCodecs 为平台 API）；Node 下组合根应选 frames。
+ *
+ * 写入顺序：所有帧与音频块都必须在 finalize 之前写完（封装需要完整的 moov）。
  */
 import type {
   ExportResult,
@@ -9,282 +11,52 @@ import type {
   FrameBitmap,
   Ms,
 } from "@lingfan-video/contracts";
-
-interface EncodedChunk {
-  data: Uint8Array;
-  /** 微秒（VideoEncoder 输出标准单位） */
-  timestampUs: number;
-  durationUs: number;
-  keyFrame: boolean;
-}
+import { Mp4Muxer, extractParameterSets, makeAacConfig, makeAvcC } from "./mp4";
 
 export interface WebCodecsExporterOptions {
   width: number;
   height: number;
+  /** 视频帧率声明（仅用于编码器提示；实际时间戳来自帧） */
   fps: number;
-  /** 码率（bps），缺省 8Mbps */
+  /** 视频码率（bps），缺省 8Mbps */
   bitrate?: number;
+  /** 音频码率（bps），缺省 128kbps */
+  audioBitrate?: number;
 }
 
-/**
- * 最小 mp4 封装：avcC + 单 mdat，fMP4 无需——浏览器 <video> 可播基本流即可。
- * 生成 ftyp + moov（trak/stsd(avc1/avcC)/stts/stsc/stsz/stco）+ mdat。
- */
-class MinimalMp4Muxer {
-  private readonly chunks: EncodedChunk[] = [];
-
-  add(chunk: EncodedChunk): void {
-    this.chunks.push(chunk);
-  }
-
-  finalize(
-    width: number,
-    height: number,
-    sps: Uint8Array,
-    pps: Uint8Array,
-  ): Blob {
-    const mdatPayloadSize = this.chunks.reduce((s, c) => s + c.data.length, 0);
-    const avcC = makeAvcC(sps, pps);
-    const moov = makeMoov(width, height, this.chunks, avcC);
-    const ftyp = makeFtyp();
-    const mdatHeader = boxHeader("mdat", 8 + mdatPayloadSize);
-    return new Blob(
-      [
-        ab(ftyp),
-        ab(moov),
-        ab(mdatHeader),
-        ...this.chunks.map((c) => ab(c.data)),
-      ],
-      { type: "video/mp4" },
-    );
-  }
-}
-
-function boxHeader(type: string, size: number): Uint8Array {
-  const b = new Uint8Array(8);
-  new DataView(b.buffer).setUint32(0, size);
-  for (let i = 0; i < 4; i++) b[4 + i] = type.charCodeAt(i);
-  return b;
-}
-
-function box(type: string, ...payload: Uint8Array[]): Uint8Array {
-  const size = 8 + payload.reduce((s, p) => s + p.length, 0);
-  return concat([boxHeader(type, size), ...payload]);
-}
-
-/** Uint8Array → 纯 ArrayBuffer 视图（Blob/BrowserBuffer 需要 ArrayBuffer 而非 SharedArrayBuffer） */
-function ab(u: Uint8Array): ArrayBuffer {
-  return u.buffer.slice(
-    u.byteOffset,
-    u.byteOffset + u.byteLength,
-  ) as ArrayBuffer;
-}
-
-function concat(parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((s, p) => s + p.length, 0);
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
-  }
-  return out;
-}
-
-const u32 = (v: number) => new Uint8Array(new Uint32Array([v]).buffer);
-const u16 = (v: number) => new Uint8Array(new Uint16Array([v]).buffer);
-const timescale = 1000; // ms 计（与时间线同刻度）
-
-function makeFtyp(): Uint8Array {
-  return box(
-    "ftyp",
-    concat([new TextEncoder().encode("isom")]),
-    u32(512),
-    concat([new TextEncoder().encode("isomiso2avc1mp41")]),
-  );
-}
-
-function makeAvcC(sps: Uint8Array, pps: Uint8Array): Uint8Array {
-  return concat([
-    new Uint8Array([0x01, sps[1]!, sps[2]!, sps[3]!, 0xfc, 0xe0 | 1]),
-    u16(sps.length),
-    sps,
-    new Uint8Array([1]),
-    u16(pps.length),
-    pps,
-  ]);
-}
-
-/** 合并 SPS/PPS 为单个（v0.1 只支持单 SPS/PPS） */
-export function extractParameterSets(desc: ArrayBuffer): {
-  sps: Uint8Array;
-  pps: Uint8Array;
-} {
-  const raw = new Uint8Array(desc);
-  const nalu: Uint8Array[] = [];
-  let i = 0;
-  while (i < raw.length) {
-    const len = new DataView(raw.buffer, raw.byteOffset + i).getUint16(0);
-    nalu.push(raw.slice(i + 2, i + 2 + len));
-    i += 2 + len;
-  }
-  const byType = (t: number) => nalu.find((n) => (n[0]! & 0x1f) === t)!;
-  return { sps: byType(7), pps: byType(8) };
-}
-
-function makeMoov(
-  width: number,
-  height: number,
-  chunks: EncodedChunk[],
-  avcC: Uint8Array,
-): Uint8Array {
-  const durationMs = chunks.length
-    ? chunks[chunks.length - 1]!.timestampUs / 1000 +
-      chunks[chunks.length - 1]!.durationUs / 1000
-    : 0;
-
-  // stts：按连续相同 duration 分段（固定 fps 下通常一段）
-  const sttsEntries: Array<[number, number]> = [];
-  for (const c of chunks) {
-    const d = Math.round(c.durationUs / 1000);
-    const last = sttsEntries[sttsEntries.length - 1];
-    if (last && last[1] === d) last[0]++;
-    else sttsEntries.push([1, d]);
-  }
-
-  const stsz = box(
-    "stsz",
-    u32(0),
-    u32(chunks.length),
-    ...chunks.map((c) => u32(c.data.length)),
-  );
-  const stco = box("stco", u32(1), u32(0)); // mdat 偏移回填
-  const stts = box(
-    "stts",
-    u32(sttsEntries.length),
-    ...sttsEntries.flatMap(([n, d]) => [u32(n), u32(d)]),
-  );
-
-  const avc1 = box(
-    "avc1",
-    new Uint8Array(6),
-    u16(1),
-    u16(0),
-    u16(0),
-    new Uint8Array(12),
-    u16(width),
-    u16(height),
-    u32(0x00480000),
-    u32(0x00480000),
-    u32(0),
-    u16(1),
-    new Uint8Array(32),
-    u16(24),
-    u16(0xffff),
-    box("avcC", avcC),
-  );
-  const stsd = box("stsd", u32(1), avc1);
-  const stbl = box("stbl", stsd, stts, stsz, stco);
-  const stss = box(
-    "stss",
-    u32(chunks.filter((c) => c.keyFrame).length),
-    ...chunks
-      .map((c, i) => (c.keyFrame ? i + 1 : 0))
-      .filter((v) => v > 0)
-      .map(u32),
-  );
-  const mdia = box(
-    "mdia",
-    box(
-      "mdhd",
-      u32(0),
-      u32(0),
-      u32(timescale),
-      u32(durationMs),
-      u16(0x55c4),
-      u16(0),
-    ),
-    box(
-      "hdlr",
-      new Uint8Array(8),
-      concat([new TextEncoder().encode("vide")]),
-      new Uint8Array(12),
-    ),
-    box("minf", box("vmhd", new Uint8Array(8), u16(1)), stbl),
-  );
-  const tkhd = box(
-    "tkhd",
-    u32(0x00000007),
-    u32(0),
-    u32(0),
-    u32(1),
-    u32(0),
-    u32(durationMs),
-    new Uint8Array(8),
-    u16(0),
-    u16(0),
-    u32(0x10000),
-    u16(width),
-    u16(height),
-    u32(0),
-    u32(0),
-    u32(0),
-  );
-  const trak = box("trak", tkhd, mdia);
-  const mvhd = box(
-    "mvhd",
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(timescale),
-    u32(durationMs),
-    u32(0x00010000),
-    u16(0x0100),
-    u16(0),
-    u32(0),
-    u32(2),
-    u32(0x10000),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(2),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u32(0),
-  );
-  return box("moov", mvhd, trak);
-}
+/** 音频编码一次提交的最大帧数（限制单次 AudioData 大小） */
+const AUDIO_BLOCK_FRAMES = 4096;
+/** 编码队列上限（超过则等待出队，避免长音频堆积内存） */
+const MAX_ENCODE_QUEUE = 16;
 
 export class WebCodecsExporter implements Exporter {
   readonly impl = "webcodecs" as const;
   readonly format = "mp4" as const;
-  private readonly muxer = new MinimalMp4Muxer();
+  private readonly muxer = new Mp4Muxer();
   private readonly opts: WebCodecsExporterOptions;
-  private encoder: VideoEncoder | null = null;
+  private videoEncoder: VideoEncoder | null = null;
+  private audioEncoder: AudioEncoder | null = null;
   private sps: Uint8Array | null = null;
   private pps: Uint8Array | null = null;
+  private asc: Uint8Array | null = null;
+  private audioLayout: { sampleRate: number; channels: number } | null = null;
+  private audioFrames = 0;
   private lastTimestampUs: number | null = null;
   private count = 0;
   private durationMs: Ms = 0;
+  private finalized = false;
 
   constructor(opts: WebCodecsExporterOptions) {
     this.opts = opts;
   }
 
   async writeFrame(frame: FrameBitmap, timestampMs: Ms): Promise<void> {
+    this.assertOpen("writeFrame");
     if (typeof VideoFrame === "undefined")
       throw new Error(
         "WebCodecsExporter 需要 WebCodecs 环境（浏览器）；Node 请用 FrameSequenceExporter",
       );
-    this.ensureEncoder();
+    this.ensureVideoEncoder();
     const timestampUs = Math.round(timestampMs * 1000);
     const durationUs =
       this.lastTimestampUs === null
@@ -300,18 +72,129 @@ export class WebCodecsExporter implements Exporter {
       timestamp: timestampUs,
       duration: durationUs,
     });
-    await new Promise<void>((resolve) => {
-      const enc = this.encoder!;
-      enc.ondequeue = () => resolve();
-      enc.encode(videoFrame, { keyFrame: this.count % 60 === 0 });
-      videoFrame.close();
-      this.count++;
-      resolve();
-    });
+    this.videoEncoder!.encode(videoFrame, { keyFrame: this.count % 60 === 0 });
+    videoFrame.close();
+    this.count++;
+    await this.drain(this.videoEncoder!);
   }
 
-  private ensureEncoder(): void {
-    if (this.encoder) return;
+  /**
+   * 写入 PPM 块：samples 为交错 Float32（长度 = 帧数 × channels），
+   * 块序列自 0 起连续，拼接即整轨（与 AudioSample 契约一致）。
+   */
+  async writeAudio(
+    samples: Float32Array,
+    sampleRate: number,
+    channels: number,
+  ): Promise<void> {
+    this.assertOpen("writeAudio");
+    if (typeof AudioEncoder === "undefined")
+      throw new Error(
+        "WebCodecsExporter.writeAudio 需要 WebCodecs 环境（浏览器）；Node 无音频编码",
+      );
+    this.ensureAudioEncoder(sampleRate, channels);
+    if (samples.length % channels !== 0)
+      throw Object.assign(
+        new Error(
+          `writeAudio 布局不符：样本数 ${samples.length} 不是声道数 ${channels} 的整数倍`,
+        ),
+        { name: "SpecViolation" },
+      );
+    const totalFrames = samples.length / channels;
+    for (let off = 0; off < totalFrames; off += AUDIO_BLOCK_FRAMES) {
+      const frames = Math.min(AUDIO_BLOCK_FRAMES, totalFrames - off);
+      const planar = toPlanar(samples, channels, off, frames);
+      const data = new AudioData({
+        format: "f32-planar",
+        sampleRate,
+        numberOfFrames: frames,
+        numberOfChannels: channels,
+        timestamp: Math.round((this.audioFrames / sampleRate) * 1e6),
+        data: planar.buffer as ArrayBuffer,
+      });
+      this.audioEncoder!.encode(data);
+      data.close();
+      this.audioFrames += frames;
+      await this.drain(this.audioEncoder!);
+    }
+  }
+
+  async finalize(): Promise<ExportResult> {
+    this.assertOpen("finalize");
+    if (!this.videoEncoder)
+      throw new Error(
+        "WebCodecsExporter：无已编码帧（finalize 前需 writeFrame）",
+      );
+    if (!this.sps || !this.pps)
+      throw new Error(
+        "WebCodecsExporter：缺少 AVC 参数集（编码器未输出 decoderConfig）",
+      );
+    await this.videoEncoder.flush();
+    this.videoEncoder.close();
+    this.videoEncoder = null;
+
+    if (this.audioEncoder) await this.audioEncoder.flush();
+    if (this.audioEncoder) this.audioEncoder.close();
+    this.audioEncoder = null;
+
+    const audio = this.audioLayout
+      ? this.audioTrackSpec(
+          this.audioLayout.sampleRate,
+          this.audioLayout.channels,
+        )
+      : undefined;
+    this.finalized = true;
+    const output = this.muxer.finalize(
+      {
+        width: this.opts.width,
+        height: this.opts.height,
+        avcC: makeAvcC(this.sps, this.pps),
+      },
+      audio,
+    );
+    return {
+      output,
+      frames: this.count,
+      durationMs: this.durationMs,
+      format: "mp4",
+    };
+  }
+
+  private audioTrackSpec(
+    sampleRate: number,
+    channels: number,
+  ): {
+    sampleRate: number;
+    channels: number;
+    asc: Uint8Array;
+    bitrate: number;
+  } {
+    const asc = this.asc ?? makeAacConfig(sampleRate, channels);
+    if (!asc)
+      throw Object.assign(
+        new Error(
+          `音频轨：采样率 ${sampleRate} 不支持 AAC 编码（需 8k–96k 常见档位）`,
+        ),
+        { name: "SpecViolation" },
+      );
+    return {
+      sampleRate,
+      channels,
+      asc,
+      bitrate: this.opts.audioBitrate ?? 128_000,
+    };
+  }
+
+  private assertOpen(op: string): void {
+    if (this.finalized)
+      throw Object.assign(
+        new Error(`WebCodecsExporter.${op}：finalize 之后不能再写入`),
+        { name: "SpecViolation" },
+      );
+  }
+
+  private ensureVideoEncoder(): void {
+    if (this.videoEncoder) return;
     const encoder = new VideoEncoder({
       output: (chunk, meta) => {
         const desc = meta?.decoderConfig?.description;
@@ -320,8 +203,8 @@ export class WebCodecsExporter implements Exporter {
           this.sps = ps.sps;
           this.pps = ps.pps;
         }
-        this.muxer.add({
-          data: new Uint8Array(chunk.byteLength),
+        this.muxer.addVideo({
+          data: copyBytes(chunk),
           timestampUs: chunk.timestamp,
           durationUs: chunk.duration ?? 0,
           keyFrame: chunk.type === "key",
@@ -339,27 +222,77 @@ export class WebCodecsExporter implements Exporter {
       framerate: this.opts.fps,
       avc: { format: "avc" },
     });
-    this.encoder = encoder;
+    this.videoEncoder = encoder;
   }
 
-  async finalize(): Promise<ExportResult> {
-    if (!this.encoder)
-      throw new Error(
-        "WebCodecsExporter：无已编码帧（finalize 前需 writeFrame）",
+  /** 音频编码器按第一块的布局装配；后续块布局必须一致（同一条轨） */
+  private ensureAudioEncoder(sampleRate: number, channels: number): void {
+    const layout = this.audioLayout;
+    if (
+      layout &&
+      (layout.sampleRate !== sampleRate || layout.channels !== channels)
+    )
+      throw Object.assign(
+        new Error(
+          `writeAudio 布局已定为 ${layout.sampleRate}Hz/${layout.channels}ch，` +
+            `后续块为 ${sampleRate}Hz/${channels}ch（同一条音轨布局必须一致）`,
+        ),
+        { name: "SpecViolation" },
       );
-    await this.encoder.flush();
-    this.encoder.close();
-    const output = this.muxer.finalize(
-      this.opts.width,
-      this.opts.height,
-      this.sps!,
-      this.pps!,
-    );
-    return {
-      output,
-      frames: this.count,
-      durationMs: this.durationMs,
-      format: "mp4",
-    };
+    if (this.audioEncoder) return;
+    const encoder = new AudioEncoder({
+      output: (chunk, meta) => {
+        const desc = meta?.decoderConfig?.description;
+        if (desc && !this.asc) this.asc = new Uint8Array(desc as ArrayBuffer);
+        this.muxer.addAudio({
+          data: copyBytes(chunk),
+          durationUs: chunk.duration ?? 0,
+        });
+      },
+      error: (e) => {
+        throw new Error(`AudioEncoder 错误：${e.message}`);
+      },
+    });
+    encoder.configure({
+      codec: "mp4a.40.2",
+      sampleRate,
+      numberOfChannels: channels,
+      bitrate: this.opts.audioBitrate ?? 128_000,
+    });
+    this.audioEncoder = encoder;
+    this.audioLayout = { sampleRate, channels };
   }
+
+  /** 编码队列过深时等待出队（长音频不能无限堆积） */
+  private async drain(encoder: VideoEncoder | AudioEncoder): Promise<void> {
+    while (encoder.encodeQueueSize > MAX_ENCODE_QUEUE) {
+      await new Promise<void>((resolve) => {
+        encoder.ondequeue = () => resolve();
+      });
+    }
+  }
+}
+
+/** EncodedChunk 数据拷贝（chunk 的 buffer 由编码器复用） */
+function copyBytes(chunk: EncodedVideoChunk | EncodedAudioChunk): Uint8Array {
+  const out = new Uint8Array(new ArrayBuffer(chunk.byteLength));
+  chunk.copyTo(out.buffer);
+  return out;
+}
+
+/** 交错 Float32 → 平面 Float32（AudioData 的 f32-planar 布局） */
+function toPlanar(
+  interleaved: Float32Array,
+  channels: number,
+  offsetFrames: number,
+  frames: number,
+): Float32Array {
+  const out = new Float32Array(frames * channels);
+  for (let ch = 0; ch < channels; ch++) {
+    const base = ch * frames;
+    for (let f = 0; f < frames; f++) {
+      out[base + f] = interleaved[(offsetFrames + f) * channels + ch] ?? 0;
+    }
+  }
+  return out;
 }
