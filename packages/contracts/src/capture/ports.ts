@@ -1,6 +1,6 @@
 import type { FrameIndex, Ms } from "../shared/units";
 
-/** 帧载体（CPU 位图最小形态；GPU 纹理路径由后续版本泛型化——载体中立化） */
+/** 帧载体（CPU 位图最小形态；数据在 CPU 侧可读写，纹理等载体由其上层自行适配） */
 export interface FrameBitmap {
   data: Uint8ClampedArray;
   width: number;

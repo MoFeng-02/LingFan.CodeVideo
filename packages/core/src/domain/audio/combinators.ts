@@ -104,14 +104,14 @@ export function curve(
   return { points: envelopePoints(out) };
 }
 
-/** 淡入（B6，ramp 的语法糖）：局部 0 → 1，ms 处满。 */
+/** 淡入（ramp 的语法糖）：局部 0 → 1，ms 处满。 */
 export function fadeIn(ms: Ms): Envelope {
   return ramp(0, 1, ms);
 }
 
 /**
- * 淡出（B6）：终点前 ms 开始从 1 降到 0，与声音实际终点对齐
- * （终点由源播完/stop/终界裁定，包络不需要预先知道时长）。
+ * 淡出：终点前 ms 开始从 1 降到 0，与声音实际终点对齐
+ * （终点由源播完/stop/终界决定，包络不需要预先知道时长）。
  */
 export function fadeOut(ms: Ms): Envelope {
   return {

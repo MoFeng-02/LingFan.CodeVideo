@@ -1,5 +1,5 @@
 /**
- * B2：运行期 `ctx.audio(clip, { at })` 的 at = 相对发射时刻的延迟；
+ * 运行期 `ctx.audio(clip, { at })` 的 at = 相对发射时刻的延迟；
  * 登记期 `env.audio(..., { at })` 仍是相对登记位置。两者不能混用同一套语义。
  */
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ async function voicesOf(
   return [...summary.audioVoices];
 }
 
-describe("ctx.audio 运行期延迟发射（B2）", () => {
+describe("ctx.audio 运行期延迟发射", () => {
   it("at 相对发射时刻：t=100 发射 + at 200 → 起播 300", async () => {
     const main = start(400, (env) => {
       env.step(400, (ctx) => {

@@ -40,7 +40,7 @@ export interface GainPoint {
 export interface VoiceTimeline {
   /** 全局起点（毫秒） */
   readonly startMs: Ms;
-  /** 全局终点（毫秒；已按源播完/stop/until/总时间线尾裁定） */
+  /** 全局终点（毫秒；已按源播完/stop/until/总时间线尾决定） */
   readonly endMs: Ms;
   readonly loop: boolean;
   readonly pan: number;

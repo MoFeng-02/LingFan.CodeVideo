@@ -131,7 +131,7 @@ const act2 = act1.cutTo(2000, (prev, env) => {
 const act3 = act2.cutTo(800, (prev, env) => {
   // 侧链：fx 出声时把 music 压 8dB（攻击/释放都是毫秒级，导出可复算）
   env.bus({ id: "fx" });
-  // B4-2：程序化音源 + 延迟效果（echo 总线）——不依赖任何素材文件
+  // 程序化音源 + 延迟效果（echo 总线）——不依赖任何素材文件
   env.bus({
     id: "echo",
     effects: [{ kind: "delay", delayMs: 180, feedback: 0.35, mix: 0.5 }],
@@ -236,7 +236,7 @@ function ensureAudio(): { ctx: AudioContext; out: CountingOutput } {
 
 playBtn.addEventListener("click", () => {
   if (busy) {
-    // 播放中：暂停/继续（画面靠 paced sink 挂起，音频靠上下文挂起）
+    // 播放中：暂停/继续（画面靠预览 Exporter 挂起，音频靠上下文挂起）
     paused = !paused;
     playBtn.textContent = paused ? "▶ 继续" : "⏸ 暂停";
     if (audioCtx) void (paused ? audioCtx.suspend() : audioCtx.resume());
@@ -294,7 +294,7 @@ exportBtn.addEventListener("click", () => void exportMp4());
 
 /**
  * 导出 mp4：与预览同一份剧本、同一批合成音源，差异只在消费端——
- * 预览用 paced sink + WebAudioOutput 实时放；导出用 WebCodecsExporter（H.264 + AAC → mp4）
+ * 预览用 PacedPreviewExporter + WebAudioOutput 实时放；导出用 WebCodecsExporter（H.264 + AAC → mp4）
  * 与 OfflineAudioMixer（离线混出整条音轨，不依赖 AudioContext / 用户手势）。
  */
 async function exportMp4(): Promise<void> {

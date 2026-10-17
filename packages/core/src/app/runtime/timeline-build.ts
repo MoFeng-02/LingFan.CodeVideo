@@ -27,7 +27,7 @@ export function resetTimeline(state: TimelineState): void {
   state.busParams.clear();
   state.busPoints.clear();
   state.busKill.clear();
-  state.form3.clear();
+  state.selfPaced.clear();
   state.timelineEnd = 0;
   state.nowMs = 0;
   state.inCallback = false;

@@ -11,8 +11,11 @@ export type Backend = "webgpu" | "webgl" | "2d";
 
 /**
  * RenderOptions：组合根的引擎形态。
- * - exporter 缺省 → 预览模式（实时呈现到 canvas，不产文件）
- * - exporter 注入 → 导出模式（时间线驱动，确定性；帧率/分辨率以本配置为准）
+ *
+ * exporter 是渲染端唯一注入面：预览端与导出端都实现 Exporter，不新增 FrameSink 注入口。
+ * 预览传按真实时钟排帧的 Exporter（impl/format = "frames"，边跑边呈现），
+ * 导出传 frames/WebCodecs/FFmpeg 实现（时间线驱动，确定性）；帧率与分辨率以本配置为准，
+ * 后端不再自定。呈现方式不由引擎猜——没有后端就没有渲染产物。
  */
 export interface RenderOptions {
   fps: number;
@@ -20,7 +23,7 @@ export interface RenderOptions {
   height: number;
   backend?: Backend;
   canvas?: HTMLCanvasElement | OffscreenCanvas;
-  exporter?: Exporter;
+  exporter: Exporter;
   /** 资产来源（setup 阶段 assets.load 后端；缺省 = fail-fast） */
   assets?: AssetSource;
   /** 音频时钟（注入 = 导出端音频启用：程序 → 样本 → writeAudio；缺省 = 纯视频） */
@@ -45,8 +48,8 @@ export interface RenderOptions {
 export interface RenderResult {
   frames: number;
   durationMs: Ms;
-  /** 注入 exporter 时返回其 finalize 结果 */
-  output?: ExportResult;
+  /** exporter.finalize() 的结果；形态由该后端决定 */
+  output: ExportResult;
 }
 
 export interface RenderFn {

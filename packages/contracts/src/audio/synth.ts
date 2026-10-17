@@ -13,9 +13,8 @@ export interface SynthEnvelope {
 }
 
 /**
- * 程序化音源：不依赖素材文件，直接由参数确定性合成（B4-2）。
- * 这是「程序化音乐 / 卡点音效」的入口——振荡器相位从 0 起算，
- * 同一份 spec 在导出端每次都得到同样的样本。
+ * 程序化音源：不依赖素材文件，直接由参数合成。
+ * 振荡器相位从 0 起算，同一份 spec 每次得到同样的样本。
  */
 export interface SynthSpec {
   readonly wave: Waveform;

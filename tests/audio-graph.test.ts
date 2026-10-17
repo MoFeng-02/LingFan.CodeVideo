@@ -1,5 +1,5 @@
 /**
- * 音频图（B4-1）：总线路由与增益 / 发送叠加 / 逐帧自动化插值 /
+ * 音频图：总线路由与增益 / 发送叠加 / 逐帧自动化插值 /
  * 侧链 duck / 总线 kill(fadeOut) / 成环报错 / 运行期懒建总线。
  * 端到端：TimelineEngine 收集 RunSummary.audioGraph + audioVoices →
  * OfflineAudioMixer.renderProgram 出交错 Float32，直接断言样本值。

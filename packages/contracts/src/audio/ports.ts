@@ -25,7 +25,7 @@ export interface EnvelopePoint {
 }
 
 /**
- * 音量包络（B5）：在声音局部时间上的分段线性乘子，首点前取首值、末点后取末值。
+ * 音量包络：在声音局部时间上的分段线性乘子，首点前取首值、末点后取末值。
  * 与基础增益相乘（`gain(0.5, { envelope: fadeIn(200) })` = 从 0 升到 0.5）。
  * 纯数据，构造期校验；导出逐样本取值、预览折算成同一组折点——两端同源。
  */
@@ -68,7 +68,7 @@ export interface AudioOptions {
   /**
    * 起播偏移（毫秒），两种发射语义不同：
    * - 登记期 `env.audio` / `bgm`：相对**登记位置**；
-   * - 运行期 `ctx.audio`：相对**发射时刻**的延迟（B2，负值按 0）。
+   * - 运行期 `ctx.audio`：相对**发射时刻**的延迟（负值按 0）。
    */
   readonly at?: Ms;
   readonly gain?: AudioGain;
@@ -129,7 +129,7 @@ export interface AudioVoice {
   readonly ops: readonly AudioOp[];
   /** 送往哪条总线（缺省 master） */
   readonly bus?: BusId;
-  /** 程序化音源（B4-2）：有该字段时 `clip` 只是占位身份，样本由 synth 求值 */
+  /** 程序化音源：有该字段时 `clip` 只是占位身份，样本由 synth 求值 */
   readonly synth?: SynthSpec;
 }
 
@@ -193,7 +193,7 @@ export interface BusUpdate {
 export interface AudioOutput {
   begin(program: AudioProgram): Promise<void>;
   start(voice: AudioVoice): LiveVoice;
-  /** 可选：运行期总线参数更新（不实现 = 预览忽略逐帧总线参数，边界见 15 号 §5.8） */
+  /** 可选：运行期总线参数更新（不实现 = 预览忽略逐帧总线参数） */
   setBus?(update: BusUpdate): void;
   dispose(): void;
 }

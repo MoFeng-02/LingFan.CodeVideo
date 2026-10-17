@@ -9,7 +9,7 @@ import type { CanvasEnv, Scene } from "./entities";
 export interface AudioEnv {
   /** 立刻发声并返回句柄；寿命 = 源播完 / stop() / 总时间线尾 */
   audio(clip: AudioClip, options?: AudioOptions): AudioHandle;
-  /** 程序化音源（B4-2）：不依赖素材文件，按参数确定性合成并立刻发声 */
+  /** 程序化音源：不依赖素材文件，按参数合成并立刻发声 */
   synth(spec: SynthSpec): AudioHandle;
 }
 
@@ -40,7 +40,7 @@ export interface Disposal {
 }
 
 /**
- * 事件去重作用域（B3）：音频发射永远是事件，缺的只是「同一作用域只发一次」的原语。
+ * 事件去重作用域：音频发射永远是事件，缺的只是「同一作用域只发一次」的原语。
  * - unit：该 step/loop 单元（含 loop 的全部迭代）只发一次（缺省）；
  * - iteration：loop 内容每轮一次（画面回卷时音效跟着每轮响）；
  * - spawn：每个 spawn 实例一次（key 作实例 id）；
@@ -97,10 +97,10 @@ export interface WaitOptions {
 }
 
 /**
- * wait 回调上下文（B1）。
+ * wait 回调上下文。
  * 能力集刻意**不含** canvas / step / loop / spawn / par：这段不产帧，
- * 若是能画、能开新的产帧路径，「空窗不产帧」的导出优化就失真了。
- * 真正需要画东西的段落用 step（会产帧），不要指望 wait 施舍。
+ * 若能画、能开新的产帧路径，「空窗不产帧」的导出优化就失真了。
+ * 需要画东西的段落用 step（会产帧）。
  */
 export interface WaitContext
   extends AudioEnv, AudioGraphEnv, Disposal, OnceEnv {

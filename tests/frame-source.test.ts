@@ -1,7 +1,10 @@
 /**
  * 帧像素来源：单一事实来源是绘制目标 canvas。
- * 钉四件事：①缺省从画布 2D 回读（导出帧不是空白）②注入 painter 时以注入为准
- * ③无 painter 且无 2D 上下文 → spec_violation（配置缺失不静默交空白帧）\n * ④显式 frames:"allow-blank" 才允许全 0 占位位图。
+ * 覆盖四件事：
+ * 1. 缺省从画布 2D 回读（导出帧不是空白）
+ * 2. 注入 painter 时以注入为准
+ * 3. 无 painter 且无 2D 上下文 → spec_violation（配置缺失不静默交空白帧）
+ * 4. 显式 frames:"allow-blank" 才允许全 0 占位位图。
  */
 import { describe, expect, it } from "vitest";
 import { render, start } from "@lingfan-video/core";

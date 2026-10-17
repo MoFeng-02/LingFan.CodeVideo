@@ -350,10 +350,9 @@ export class WebAudioOutput implements AudioOutput {
   }
 
   /**
-   * 程序化音源排程（B4-2）：振荡器/噪声源 + ADSR 自动化 + 声音增益，
-   * 与导出端共用同一组包络折点（时值由 spec.durationMs 决定，已知）。
-   * 诚实边界：预览端振荡器不复刻 rate/warp（导出端是重采样，音高/时长一致；
-   * 预览端 synth 的变速留到 B4-3 与离线同源时再对齐）。
+   * 程序化音源排程：振荡器/噪声源 + ADSR 自动化 + 声音增益，
+   * 与导出端共用同一组包络折点（时值由 spec.durationMs 决定）。
+   * 预览端振荡器不复刻 rate/warp 的逐样本细节，音高与时长一致。
    */
   private scheduleSynth(voice: AudioVoice): LiveVoice | null {
     const spec = voice.synth!;

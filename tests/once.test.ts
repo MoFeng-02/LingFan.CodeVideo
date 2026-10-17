@@ -1,5 +1,5 @@
 /**
- * B3：`ctx.once(scope, fn)` —— 音频发射永远是事件，本原语只做「同一作用域只发一次」。
+ * `ctx.once(scope, fn)` —— 音频发射永远是事件，本原语只做「同一作用域只发一次」。
  * 去重键必须确定性（作用域 + 单元实例 + 迭代/实例 id），且每次 run 重置。
  */
 import { describe, expect, it } from "vitest";

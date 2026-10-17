@@ -1,7 +1,7 @@
 /**
- * B5/B6：音量包络（ramp/curve）与淡入淡出语法糖。
+ * 音量包络（ramp/curve）与淡入淡出语法糖。
  * 求值只有一处（infra `evaluateVoice`）：导出逐样本取 `gainAt`、预览取同一组
- * `gainPoints` 做 AudioParam 自动化——本测试钉住这条同源约定。
+ * `gainPoints` 做 AudioParam 自动化——两侧必须同源。
  */
 import { describe, expect, it } from "vitest";
 import { clip, curve, fadeIn, fadeOut, gain, ramp } from "@lingfan-video/core";
@@ -21,7 +21,7 @@ function voiceOf(g: AudioGain, startMs = 1000): AudioVoice {
   };
 }
 
-describe("B5 ramp：线性包络，首尾保持", () => {
+describe("ramp：线性包络，首尾保持", () => {
   it("局部 0 → from、ms → to，中途线性", () => {
     const tl = evaluateVoice(
       voiceOf(gain(1, { envelope: ramp(0, 1, 300) })),
@@ -56,7 +56,7 @@ describe("B5 ramp：线性包络，首尾保持", () => {
   });
 });
 
-describe("B5 curve：分段线性", () => {
+describe("curve：分段线性", () => {
   it("经过每个折点，段内线性、末端保持", () => {
     const tl = evaluateVoice(
       voiceOf(gain(1, { envelope: curve([0, 0], [100, 1], [300, 0.5]) })),
@@ -72,7 +72,7 @@ describe("B5 curve：分段线性", () => {
   });
 });
 
-describe("B6 fadeIn / fadeOut 语法糖", () => {
+describe("fadeIn / fadeOut 语法糖", () => {
   it("fadeIn(200) = 200ms 从 0 升到基础值", () => {
     const tl = evaluateVoice(
       voiceOf(gain(0.5, { envelope: fadeIn(200) })),

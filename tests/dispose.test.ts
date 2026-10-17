@@ -121,7 +121,7 @@ describe("ctx.dispose()：函数内部触发自己的消亡过程", () => {
     expect(dying.map((p) => p.t)).toEqual([125, 150, 175]);
     expect(dying[0]!.progress).toBeCloseTo(0.25, 5);
     expect(dying[2]!.progress).toBeCloseTo(0.75, 5);
-    // 2026-10-17 新增：窗口结束后不再有回调（帧仍按采样网格产出）
+    // 窗口结束后不再有回调（帧仍按采样网格产出）
     expect(paints.every((p) => p.t < 200)).toBe(true);
   });
 });

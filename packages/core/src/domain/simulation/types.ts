@@ -104,7 +104,7 @@ export interface CompiledUnit {
   /** 回调入参：step 收 StepContext、loop 迭代收 LoopContext（由 runtime 组装） */
   call: (ctx: unknown) => FrameState | void;
   /**
-   * wait 回调单元（B1）：**不产帧**，只在「其他单元产帧的网格点」上被调用；
+   * wait 回调单元：**不产帧**，只在「其他单元产帧的网格点」上被调用；
    * 出现该字段 = 本单元不贡献采样网格。`call` 为其占位（不发 FrameState）。
    */
   onUpdate?: (ctx: WaitContext) => void;
@@ -135,7 +135,7 @@ export interface CompiledAudio {
   /** 段内偏移：登记位置 + options.at */
   atMs: Ms;
   readonly options: AudioOptions;
-  /** 程序化音源（B4-2）：有该字段时 clip 只是占位身份 */
+  /** 程序化音源：有该字段时 clip 只是占位身份 */
   readonly synth?: SynthSpec;
 }
 

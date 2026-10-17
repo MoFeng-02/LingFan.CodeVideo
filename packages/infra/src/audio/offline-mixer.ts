@@ -57,7 +57,7 @@ export class OfflineAudioMixer implements AudioClock {
       1,
       Math.ceil((program.durationMs / 1000) * this.sampleRate),
     );
-    // 素材声 → 解码；程序化音源（B4-2）→ 确定性合成（按声音对象缓存，id 可重复）
+    // 素材声 → 解码；程序化音源 → 确定性合成（按声音对象缓存，id 可重复）
     const cache = new Map<AudioVoice, DecodedPcm>();
     for (const voice of program.voices)
       cache.set(voice, await this.pcmOf(voice));
@@ -194,6 +194,6 @@ function sampleAt(
 function panGain(pan: number, ch: number, outCh: number): number {
   if (outCh !== 2 || pan === 0) return 1;
   const p = Math.max(-1, Math.min(1, pan));
-  // 等功率摆位近似：线性增益（v0.1 简化，正弦律后续版本）
+  // 线性摆位：向对侧衰减，居中时两声道取原始增益
   return ch === 0 ? 1 - Math.max(0, p) : 1 - Math.max(0, -p);
 }

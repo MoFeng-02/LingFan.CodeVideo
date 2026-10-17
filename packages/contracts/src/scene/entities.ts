@@ -45,7 +45,7 @@ export interface SceneEnv extends CanvasEnv {
   par(children: Array<(branch: SceneEnv) => void>): void;
   /** key 必填（同 key 去重 = 跨段续接） */
   spawn<S>(scene: Scene<S>, options: SpawnOptions): Handle;
-  /** 纯时间推进（自身不产帧）；给 onUpdate 则「有帧时逐帧回调」，见 15 号 §2 */
+  /** 纯时间推进（自身不产帧）；给 onUpdate 则「有帧时逐帧回调」 */
   wait(duration: Ms, onUpdate?: WaitFn, options?: WaitOptions): void;
   transitionTo(next: Scene<unknown>): void;
   /**
@@ -55,7 +55,7 @@ export interface SceneEnv extends CanvasEnv {
   audio(clip: AudioClip, options?: AudioOptions): void;
   /** bgm 糖：缺省循环到时间线尾（显式 loop 可覆盖） */
   bgm(clip: AudioClip, options?: Omit<AudioOptions, "loop">): void;
-  /** 程序化音源（B4-2）：按参数确定性合成，起点 = 当前登记位置；返回 void（与 audio 一致） */
+  /** 程序化音源：按参数合成，起点 = 当前登记位置；返回 void（与 audio 一致） */
   synth(spec: SynthSpec): void;
   /**
    * 登记期总线拓扑：建 bus、挂父总线下；重复登记同 id = 覆盖规格（最后声明为准）。
@@ -73,7 +73,7 @@ export interface SetupEnv extends SceneEnv {
   assets: AssetHooks;
 }
 
-/** 资产钩子（当前版本仅 load；generate + 缓存规则后续版本接入） */
+/** 资产钩子：只提供 load */
 export interface AssetHooks {
   load(url: string): Promise<AssetLike>;
 }

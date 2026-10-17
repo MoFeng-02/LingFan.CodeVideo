@@ -133,8 +133,8 @@ describe("spawn 链登记唯一性（注册期）", () => {
   });
 });
 
-describe("loop（三种形式）", () => {
-  it("form-2 loop ms×times 迭代数正确", async () => {
+describe("loop", () => {
+  it("loop(ms, times)：迭代数正确", async () => {
     let calls = 0;
     const scene = createScene(300, (_prev, env) => {
       env.loop({
@@ -150,7 +150,7 @@ describe("loop（三种形式）", () => {
     expect(calls).toBe(9);
   });
 
-  it("form-3 无 ms：整段一次求值、stop() 提前终结", async () => {
+  it("无 ms 的 loop：整段一次求值、stop() 提前终结", async () => {
     let calls = 0;
     const scene = createScene(300, (_prev, env) => {
       env.loop({
@@ -199,7 +199,7 @@ describe("transitionTo（提前收窗）", () => {
     });
     const engine = makeEngine();
     const summary = await engine.run(host, new MemoryFrameSink());
-    // 链起点 100 + 实际内容 200 = 链尾 300（修复前会虚高到 100+300+500=900）
+    // 链尾 = 起点 100 + 实际内容 200 = 300（不含被短路掉的声明时长）
     // 链死后的 400ms 空窗不该画出 tail 内容；空窗也不产帧
     // 采样点：host step 0/33.3/66.7 + 链 first step 100/133.3/166.7 + tail step 200/233.3/266.7 = 9
     expect(summary.durationMs).toBe(600);

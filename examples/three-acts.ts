@@ -11,7 +11,7 @@ import { FrameSequenceExporter } from "@lingfan-video/infra";
 import type { StepContext } from "@lingfan-video/contracts";
 
 function drawTitle(ctx: StepContext, text: string) {
-  // painter 当前为 CPU 占位（全 0 位图）：绘制回调在此只演示 ctx 形状
+  // painter 是 CPU 全 0 位图占位：绘制回调在此只演示 ctx 形状
   void ctx;
   return { title: text };
 }

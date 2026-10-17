@@ -10,7 +10,7 @@ import { Recorder } from "../simulation/dsl";
 /**
  * 契约符合性检查：纯检查、无副作用、可对未渲染剧本前置运行。
  * 做法：干跑登记（Recorder 捕获节点流），再对节点流做结构性检查。
- * 检查项：window_overflow（step at/duration 越窗类 bug）、
+ * 检查项：window_overflow（step at/duration 越窗）、
  * spec_violation（重复链接、body 抛错、spawn key 段内重复）。
  */
 export function validate(scene: Scene<unknown>, fps = 60): ValidationError[] {
@@ -179,7 +179,7 @@ function checkNodes(
 }
 
 /**
- * 程序化音源检查（B4-2）：字面量可直接构造 spec，不能只靠构造期校验。
+ * 程序化音源检查：字面量可直接构造 spec，不能只靠构造期校验。
  */
 function checkSynth(
   path: string,

@@ -1,6 +1,6 @@
 /**
- * B1：`wait(ms, onUpdate)` —— 自身不产帧，只在「同帧有其他活跃单元产帧」时逐帧回调。
- * 纯空窗（没有任何产帧单元）零回调是**已知边界**，不是缺陷。
+ * `wait(ms, onUpdate)` —— 自身不产帧，只在「同帧有其他活跃单元产帧」时逐帧回调。
+ * 纯空窗（没有任何产帧单元）没有采样网格点，因此零回调。
  */
 import { describe, expect, it } from "vitest";
 import { TimelineEngine, clip, start } from "@lingfan-video/core";
@@ -84,7 +84,7 @@ describe("wait(ms, onUpdate)：有帧的网格点上逐帧回调", () => {
     expect(times).toEqual([0, 50]);
   });
 
-  it("纯空窗：没有任何产帧单元 → 零帧零回调（已知边界）", async () => {
+  it("纯空窗：没有任何产帧单元 → 零帧零回调", async () => {
     let calls = 0;
     const main = start(200, (env) => {
       env.wait(200, () => {

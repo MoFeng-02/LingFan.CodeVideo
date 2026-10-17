@@ -80,7 +80,7 @@ export interface TimelineState {
   audioVoices: MutableVoice[];
   /** 声音 id 序号（确定性分配） */
   voiceSeq: number;
-  /** B3 事件去重登记（确定性键：作用域 + 单元实例 + 迭代/实例 id） */
+  /** 事件去重登记（确定性键：作用域 + 单元实例 + 迭代/实例 id） */
   onceKeys: Set<string>;
   /** 音频图拓扑（登记期声明；同 id / 同 from→to 覆盖） */
   busSpecs: Map<string, BusSpec>;
@@ -92,7 +92,8 @@ export interface TimelineState {
   busPoints: Map<string, BusPoint[]>;
   /** 总线消亡窗口 */
   busKill: Map<string, { from: Ms; until: Ms }>;
-  form3: Map<string, { iteration: number; iterStart: Ms }>;
+  /** 未给 ms 的 loop：迭代号与迭代起点（按单元键登记） */
+  selfPaced: Map<string, { iteration: number; iterStart: Ms }>;
   spans: ChainSpan[];
   timelineEnd: Ms;
   /** 当前求值时间（句柄操作／alive 判定的时间轴依据） */

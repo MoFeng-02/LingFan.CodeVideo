@@ -7,6 +7,7 @@ import type {
   AudioGraph,
   ComputeFns,
   ExportResult,
+  Exporter,
   FrameBitmap,
   FrameIndex,
   FrameSink,
@@ -127,19 +128,17 @@ function makeMissingFrameSource(): Error {
   return err;
 }
 
-/** render（RenderFn 契约实现）：exporter 注入 = 导出模式；缺省 = 预览模式 */
+/** render（RenderFn 契约实现）：帧由注入的 sink 逐帧接收；音轨在封装收尾前写入 */
 export const render: import("@lingfan-video/contracts").RenderFn = async (
   scene,
   options,
 ) => {
   const { engine } = assemble(options);
-  const exporter = options.exporter;
-  if (!exporter) {
-    // 预览模式缺省未实装（实时呈现由宿主用 paced sink 装配，见 examples/browser）；导出走注入的 exporter
-    throw makeMissingExporter();
-  }
+  // 契约已把 exporter 定为必填；此处仍守卫一次，供未类型化的 JS 调用方在首帧前拿到明确报错
+  const exporter: Exporter | undefined = options.exporter;
+  if (!exporter) throw makeMissingExporter();
   const sink = exporterAdapter(exporter);
-  // 预览端（paced sink）与导出共用同一 run；预览声音经 audioOut 边跑边发
+  // 预览端（Exporter 的实时实现）与导出共用同一 run；预览声音经 audioOut 边跑边发
   const summary = await engine.run(
     scene as SceneInternal<unknown>,
     sink,
@@ -166,7 +165,7 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
  * 有声音却没有音轨出口时报错，不静默丢掉声音。
  */
 async function writeAudioTrack(
-  exporter: NonNullable<RenderOptions["exporter"]>,
+  exporter: Exporter,
   options: RenderOptions,
   voices: readonly import("@lingfan-video/contracts").AudioVoice[],
   durationMs: Ms,
@@ -202,7 +201,8 @@ async function writeAudioTrack(
 
 function makeMissingExporter(): Error {
   const err = new Error(
-    "RenderOptions.exporter 缺省：预览模式未实装；导出请注入 exporter",
+    "render 需要 RenderOptions.exporter：预览传按真实时钟排帧的 Exporter，" +
+      "导出传 frames/WebCodecs/FFmpeg 实现；没有渲染后端就没有产物",
   );
   err.name = "SpecViolation";
   return err;
@@ -223,9 +223,7 @@ function makeHeadlessCanvas(
  * 封装收尾分两步——引擎调用 finalize（视为「帧已交付完毕」），组合根写完音轨后调 flushExporter
  * 才真正 finalize：音频块必须出现在 moov 之前，所以顺序不能交给两条独立路径各调一次。
  */
-function exporterAdapter(
-  exporter: NonNullable<RenderOptions["exporter"]>,
-): FrameSink & {
+function exporterAdapter(exporter: Exporter): FrameSink & {
   flushExporter(): Promise<void>;
   getOutput(): Promise<ExportResult>;
 } {

@@ -17,7 +17,7 @@ const scene = start(2000, (env) => {
 
 // 契约符合性：登记期干跑检查（越窗/重复链接/body 抛错）
 const errors = validateScene(scene);
-console.log("validate:", errors.length === 0 ? "✓ 无违规" : errors);
+console.log("validate:", errors.length === 0 ? "无违规" : errors);
 
 // 时间点查询：任意毫秒处的状态快照（key 化聚合）
 const at600 = await compute.computeAt(scene, 600);

@@ -134,7 +134,7 @@ export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
           disp,
         );
       else if (unit.loop && unit.loop.iterationMs === undefined)
-        evalForm3(
+        evalSelfPacedLoop(
           deps,
           span,
           unit,
@@ -262,7 +262,7 @@ function onceKeyOf(
   }
 }
 
-/** B3 事件去重：同一作用域首次触发才执行；能力集只给发声与自消杀 */
+/** 事件去重：同一作用域首次触发才执行；能力集只给发声与自消杀 */
 function onceOf(
   deps: EvalDeps,
   t: Ms,
@@ -370,7 +370,7 @@ function evalLoopIter(
 }
 
 /**
- * wait 回调单元（B1）：自身不产帧，只在其他单元产帧的网格点上被调用。
+ * wait 回调单元：自身不产帧，只在其他单元产帧的网格点上被调用。
  * 能力集刻意不含画布与产帧原语——见 contracts WaitContext。
  */
 function evalWait(
@@ -409,8 +409,8 @@ function evalWait(
   }
 }
 
-/** loop 无固定迭代窗（自管节奏）：逐帧活跃，ctx.next() 推进 iteration、stop() 终止 */
-function evalForm3(
+/** loop 未给 ms（自管节奏）：逐帧活跃，ctx.next() 推进 iteration、stop() 终止 */
+function evalSelfPacedLoop(
   deps: EvalDeps,
   span: ChainSpan,
   unit: CompiledUnit,
@@ -423,11 +423,12 @@ function evalForm3(
   disp: DisposalInfo,
 ): void {
   const { width, height, canvas } = deps.state.opts;
-  const cur = deps.state.form3.get(deadKey) ?? {
+  const cur = deps.state.selfPaced.get(deadKey) ?? {
     iteration: 0,
     iterStart: localT,
   };
-  if (!deps.state.form3.has(deadKey)) deps.state.form3.set(deadKey, cur);
+  if (!deps.state.selfPaced.has(deadKey))
+    deps.state.selfPaced.set(deadKey, cur);
   const uf = unit.fps;
   const ctx: LoopContext = {
     canvas,
@@ -440,7 +441,7 @@ function evalForm3(
     deltaTime: 1000 / uf,
     iteration: cur.iteration,
     iterationT: localT - cur.iterStart,
-    iterationProgress: 0, // form-3 无迭代时长，进度自管
+    iterationProgress: 0, // 无迭代时长：进度自管
     next: () => {
       cur.iteration += 1;
       cur.iterStart = localT;

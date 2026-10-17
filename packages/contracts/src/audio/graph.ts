@@ -7,10 +7,10 @@ export type BusId = string;
 /** 顶层母线 id（隐式存在，不需要登记） */
 export const MASTER_BUS: BusId = "master";
 
-/** 滤波器类型（B4-1 首版：biquad） */
+/** 滤波器类型（biquad） */
 export type FilterKind = "lowpass" | "highpass" | "bandpass";
 
-/** 总线效果：滤波器（静态参数，逐帧自动化留 B4-3） */
+/** 总线效果：滤波器 */
 export interface FilterSpec {
   readonly kind: "filter";
   readonly type: FilterKind;
@@ -20,7 +20,7 @@ export interface FilterSpec {
   readonly q?: number;
 }
 
-/** 总线效果：压缩器（静态参数） */
+/** 总线效果：压缩器 */
 export interface CompressorSpec {
   readonly kind: "compressor";
   readonly thresholdDb: number;
@@ -31,7 +31,7 @@ export interface CompressorSpec {
   readonly kneeDb?: number;
 }
 
-/** 总线效果：延迟线（确定性；B4-2） */
+/** 总线效果：延迟线 */
 export interface DelaySpec {
   readonly kind: "delay";
   /** 延迟时间（毫秒，> 0） */
@@ -42,7 +42,7 @@ export interface DelaySpec {
   readonly mix?: number;
 }
 
-/** 总线效果：简化 Freeverb（8 comb + 4 allpass，确定性；B4-2） */
+/** 总线效果：简化 Freeverb（8 comb + 4 allpass） */
 export interface ReverbSpec {
   readonly kind: "reverb";
   /** 房间大小 0..1（缺省 0.7） */
@@ -120,12 +120,12 @@ export interface AudioGraph {
   readonly automation: readonly BusAutomation[];
 }
 
-/** 累计发送的自增计数（预览端不还原 sends，导出端全量参与——诚实边界见 15 号 §5.8） */
+/** 累计发送的自增计数（预览端不还原 sends，导出端全量参与） */
 export type BusSendCount = number;
 
 /**
- * 运行期总线句柄：回调内改参数、按名字持有时长（kill 支持 fadeOut 消亡窗口，
- * 语义与 §9.13 视觉消亡一致——窗口内参数继续被求值，窗口结束才出图）。
+ * 运行期总线句柄：回调内改参数、按名字持有时长。
+ * kill 支持 fadeOut 窗口——窗口内参数继续被求值，窗口结束后失效。
  */
 export interface BusHandle {
   readonly id: BusId;

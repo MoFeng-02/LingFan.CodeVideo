@@ -44,7 +44,6 @@ packages/core        域层（compiler / validator / 时间层）+ 引擎 + 组�
 packages/infra       契约的适配器实现（帧序列导出、WebCodecs MP4、离线混音、WebAudio 预览、内存捕获）
 examples/            消费端示范（Node 脚本 + 浏览器实时预览），不是包
 tests/               集中式单元/端到端测试，不是包
-私有文档/             设计规约（唯一活文档：规约索引 → 各模块）
 ```
 
 ## 关键语义速览
@@ -54,12 +53,12 @@ tests/               集中式单元/端到端测试，不是包
 - **保活**：`forever` spawn 活到总链尾，链内容播完后循环重放；`kill`/`dispose` 即停。
 - **所有函数可具名消杀，消亡也有过程**：spawn 链用 `key`/`Handle`，`step`/`loop` 用 `options.id`；`scheduler.kill(target, { fadeOut })` 或函数内部 `ctx.dispose({ fadeOut })` 触发——`fadeOut` 窗口内目标继续逐帧求值，回调拿 `disposing` / `disposeProgress` 0→1 自己画消失过程，窗口结束才真正出池（缺省立即死）。音频侧同义：`AudioHandle.stop(fadeOutMs)`。
 - **音频是运行期的能力，不是一条音轨**：`ctx.audio(clip, opts)` 在任意 step/loop 回调里发声并拿到 `AudioHandle{stop, setGain, setRate}`——可共生（随状态收声）、可独美（自由发射）、可贯穿全局；引擎不因幕/段边界自动杀声音，唯一自动终界是总时间线尾。登记期用 `env.audio/env.bgm` 做声明。
-- **声音有图可路由，导出可复算**：`env.bus/send/duck` 登记期定拓扑，运行期 `ctx.bus(id).gain(...)` / `kill({fadeOut})` 只改参数与生命周期；导出端逐样本过「总线 → 效果 → 侧链 duck → master」，预览端按图建 WebAudio 节点（duck 与插值不还原，导出是真相）。`AudioProgram.graph` 缺省时保持旧的平铺混音路径。
+- **声音有图可路由，导出可复算**：`env.bus/send/duck` 登记期定拓扑，运行期 `ctx.bus(id).gain(...)` / `kill({fadeOut})` 只改参数与生命周期；导出端逐样本过「总线 → 效果 → 侧链 duck → master」，预览端按图建 WebAudio 节点（duck 与插值不还原，以导出端结果为准）。`AudioProgram.graph` 缺省时走平铺混音路径。
 - **事件与状态分开，去重显式**：`ctx.audio()` 每次执行都发（事件），引擎不替循环记轮次；要「每轮/每实例/整场只响一次」用 `ctx.once("iteration"|"spawn"|"scene"|"unit", fn)`——去重键确定性、每次 `run()` 重置。持续底噪用句柄持有 + `stop({ fadeOut })`，不走 `once`。
 - **包络是数据，不是隐藏自动化**：`gain(v, { envelope: curve([[0,0],[200,1]]) })` / `ramp` / `fadeIn` / `fadeOut` 只是构造 `Envelope{points}`；`fromEnd` 拐点相对素材末尾定位（`fadeOut` 对任意时长成立）。导出与预览共用同一份拐点求值。
 - **音频强类型**：`clip()` 是唯一音源构造入口（brand 类型）；音量/摆位/循环/变速是组合子（`gain/pan/loop/rate/warp`）并在构造期校验，非法组合立刻 `spec_violation`，不等到渲染才炸。
 - **音频不占时间**：发声不推进时间池、不产帧；需要「只有声音的段落」用 `wait(ms)`。
-- **静默段也能有运行期逻辑**：`wait(ms, onUpdate?)` 自身不产帧，但在「同帧有别的单元产帧」的网格点上逐帧回调（回调能力集只含声音/消杀/时间，不含 `step/loop/par/spawn`）；整段纯空窗时零回调是已知边界，要这段真有逻辑就用 `step`。运行期 `ctx.audio({ at })` 的 `at` 是**相对发射时刻的延迟**（「300ms 后响」），登记期 `env.audio({ at })` 才是相对登记位置——两条语义并存，不混用。
+- **静默段也能有运行期逻辑**：`wait(ms, onUpdate?)` 自身不产帧，但在「同帧有别的单元产帧」的网格点上逐帧回调（回调能力集只含声音/消杀/时间，不含 `step/loop/par/spawn`）；整段纯空窗时零回调（wait 不产帧就没有网格点），要这段真有逻辑就用 `step`。运行期 `ctx.audio({ at })` 的 `at` 是**相对发射时刻的延迟**（「300ms 后响」），登记期 `env.audio({ at })` 才是相对登记位置——两条语义并存，不混用。
 - **音频变速**：`warp` 分段线性时间映射——突然加速/恢复/不恢复、`srcMs:"end"` 自动填满区间、踩点；变速即变调（磁带式）。求值只有一处（`infra/audio/voice-timeline.ts`）：导出逐样本、预览转 AudioParam 自动化。
 - **程序化音源也是声音**：`env.synth({ wave:"triangle", freq:660, durationMs:700 })`（登记期）与 `ctx.synth(...)`（运行期）产出与 `audio` 同形态的声音（增益/包络/pan/句柄/时间线终界全沿用）；振荡器相位从 0 起算、噪声是 xorshift32，同一份 spec 每次导出逐样本相同。合成声源时值已知，`fadeOut`/`fromEnd` 包络因此能落点。
 - **效果是总线的一部分**：`env.bus({ id:"echo", effects:[{ kind:"delay", delayMs:180, feedback:0.35, mix:0.5 }] })` 声明一次，之后 `ctx.audio(clip, { bus:"echo" })` 或 `ctx.synth(..., { bus:"echo" })` 就挂上去；`filter`/`compressor`/`delay`/`reverb` 按声明顺序就地作用，导出端自研 DSP（确定性、可复算），预览端用 WebAudio 节点（音色近似、时序一致）。
@@ -67,11 +66,3 @@ tests/               集中式单元/端到端测试，不是包
 - **导出 mp4 自带音轨**：`WebCodecsExporter` 用 H.264 + AAC-LC 编码并自封装 mp4，声音走 `OfflineAudioMixer`（与预览同一份合成公式/求值点）；组合根顺序是「帧 → 声 → finalize」，有声音却没音轨出口会直接 `spec_violation`，不静默丢声。浏览器示例点「导出 MP4」即可下载（`pnpm dev`）。
 - **预览用音频时钟做主时钟**：`PacedPreviewExporter`（infra）按 `WebAudioOutput.nowMs()` 排帧——首次创建 AudioContext 时其时钟可能冷启动数秒，画面若跟墙钟就会「画面放完声音还在响」；无音频时钟或时钟停滞时自动退回墙钟，预览不会卡死。
 - **终界只有一个**：总时间线结束即全停——末帧落在最后一个采样网格点、覆盖到终点后画面保留（之后无帧、无定时器），音频（含 `loop`）只在到终点的剩余时长内发声；导出端由缓冲长度裁齐，预览端显式排 `stop`。
-
-## 文档
-
-- 规约索引：[私有文档/CodeVideo规约/README.md](私有文档/CodeVideo规约/README.md)
-- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟、§9.13 消杀与消亡过程、§9.14 帧来源缺失显式化、§9.15 `wait` 回调与运行期音频延迟、§9.16 `once` 事件去重与包络组合子、§9.17 音频图 bus/sends/ducking、§9.18 程序化音源与延迟/混响）
-- 契约设计规则：[13 号](私有文档/CodeVideo规约/13-contract-design.md)
-- 目录规划：[14 号](私有文档/CodeVideo规约/14-directory-plan.md)
-- B 阶段设计与裁决（游戏判据、wait 回调、事件去重、音频图 bus/sends/ducking、程序化音源与延迟/混响）：[15 号](私有文档/CodeVideo规约/15-audio-graph-and-play-semantics.md)

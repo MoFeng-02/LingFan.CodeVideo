@@ -1,6 +1,6 @@
 /**
  * 池账本 / 校验（契约符合性检查 + 双池账本）。
- * 越窗回归钉：30fps 下 f(90)=3000ms 恰越 [0,3000) 窗。
+ * 越窗边界：30fps 下 f(90)=3000ms 恰越 [0,3000) 窗。
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -13,7 +13,7 @@ import {
 import type { SimNode } from "@lingfan-video/core";
 
 describe("validate（契约符合性检查）", () => {
-  it("f(90) 越窗 bug 回归钉：at 越窗 → window_overflow", () => {
+  it("f(90) 越窗：at 越窗 → window_overflow", () => {
     // 3000ms 窗、30fps：env.f(90) = 3000ms 恰好越界（窗 [0,3000)）
     const scene = createScene(3000, (_prev, env) => {
       env.step(100, () => {}, { at: env.f(90) });

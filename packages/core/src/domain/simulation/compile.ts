@@ -83,16 +83,16 @@ export function compileSegment(
           const iterMs = n.ms;
           const loopFps = effFps(n.fps);
           if (iterMs === undefined) {
-            // form-3：自管节奏，整段活跃，由 runtime 以 ctx.next()/stop() 驱动
+            // 未给 ms：自管节奏，整段活跃，由 runtime 以 ctx.next()/stop() 驱动
             units.push({
-              key: `loop#form3#${order}`,
+              key: `loop#self#${order}`,
               windowStart: local,
               windowEnd: duration,
               hold: false,
               fps: loopFps,
               call: n.fn as CompiledUnit["call"],
               loop: { iteration: 0 },
-              loopBase: `loop#form3#${order}`,
+              loopBase: `loop#self#${order}`,
               disposeId: n.id,
               order: order++,
             });

@@ -1,5 +1,5 @@
 /**
- * 程序化音源（B4-2）：按 SynthSpec 确定性合成 PCM。
+ * 程序化音源：按 SynthSpec 确定性合成 PCM。
  * 同一份 spec + 同一声明布局 = 每次导出同样的样本；不使用 Math.random。
  */
 import type { Ms, SynthSpec, Waveform } from "@lingfan-video/contracts";

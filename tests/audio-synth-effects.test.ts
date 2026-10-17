@@ -1,5 +1,5 @@
 /**
- * B4-2：程序化音源（synth）+ 总线延迟/混响。
+ * 程序化音源（synth）与总线延迟/混响。
  * 覆盖：确定性合成、ADSR、登记期/运行期发射、离线混音、延迟回声、混响尾音、非法 spec。
  */
 import { describe, expect, it } from "vitest";
@@ -60,7 +60,7 @@ function energy(data: Float32Array, fromMs: number, toMs: number): number {
   return sum;
 }
 
-describe("程序化音源（B4-2）", () => {
+describe("程序化音源", () => {
   it("合成确定性：同一 spec 两次渲染逐样本相同", () => {
     const spec = {
       wave: "sine" as const,

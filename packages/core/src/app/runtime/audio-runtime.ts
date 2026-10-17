@@ -30,7 +30,7 @@ export interface MutableVoice {
   ops: AudioOp[];
   /** 送往哪条总线（缺省 master） */
   bus?: AudioVoice["bus"];
-  /** 程序化音源（B4-2） */
+  /** 程序化音源 */
   synth?: SynthSpec;
 }
 
@@ -67,7 +67,7 @@ export function emitAudio(
   synth?: SynthSpec,
 ): AudioHandle {
   const { state } = deps;
-  // B2：运行期 `at` = 相对发射时刻的延迟（登记期语义 = 相对登记位置，见 compile）
+  // 运行期 `at` = 相对发射时刻的延迟（登记期语义 = 相对登记位置，见 compile）
   const delay = Math.max(0, options?.at ?? 0);
   const startMs = Math.max(0, atMs + delay);
   const voice = pushVoice(state, clip, startMs, options, synth);
