@@ -12,6 +12,7 @@ import type {
   DecodedAudio,
   Ms,
 } from "@lingfan-video/contracts";
+import { resolveWarp, sourceMsAt, timelineMsAtSource } from "./warp";
 
 /** 离线解码器：把 clip url 变成交错 Float32 PCM（平台适配器注入；Node 测试用合成器替代） */
 export interface AudioDecoder {
@@ -36,8 +37,8 @@ const DEFAULT_CHANNELS = 2;
 
 /** OfflineAudioMixer：AudioClock 契约的导出端实现（样本=时间线纯函数） */
 export class OfflineAudioMixer implements AudioClock {
-  private readonly sampleRate: number;
-  private readonly channels: number;
+  readonly sampleRate: number;
+  readonly channels: number;
 
   constructor(
     private readonly decoder: AudioDecoder,
@@ -50,7 +51,6 @@ export class OfflineAudioMixer implements AudioClock {
   /** 混音全时间线：事件按 globalAtMs 铺入输出缓冲（多实例叠加、loop 平铺、fade 逐样本包络） */
   async renderTimeline(
     durationMs: Ms,
-    _fps: number,
     events: readonly AudioTimelineEvent[],
   ): Promise<AudioSample[]> {
     const frames = Math.max(
@@ -73,7 +73,7 @@ export class OfflineAudioMixer implements AudioClock {
     return meta;
   }
 
-  /** 单事件铺轨：重采样（线性）→ 声道映射 → loop 平铺 → 音量/淡入淡出包络 → pan 摆位 */
+  /** 单事件铺轨：时间映射（变速）→ 重采样（线性）→ 声道映射 → loop 平铺 → 音量/淡入淡出包络 → pan 摆位 */
   private layoutEvent(
     ev: AudioTimelineEvent,
     pcm: DecodedPcm,
@@ -84,24 +84,25 @@ export class OfflineAudioMixer implements AudioClock {
     if (startFrame >= outFrames) return;
     const srcRate = pcm.sampleRate;
     const srcCh = pcm.channels;
-    // 源时长（帧）：loop 时按需平铺，否则受源长与剩余空间约束
     const srcFrames = pcm.data.length / srcCh;
-    // 事件输出帧数：loop = 直到输出缓冲尽头；否则 = 源时长重采样到输出采样率
-    const evDurFrames = ev.loop
-      ? outFrames - startFrame
-      : Math.floor((pcm.durationMs / 1000) * this.sampleRate);
+    const warp = resolveWarp(ev.warp, pcm.durationMs);
     const space = outFrames - startFrame;
-    const total = Math.min(evDurFrames, space);
+    // 事件输出帧数：loop = 铺到输出缓冲尽头；否则 = 源播完所需的局部时间线时长（受变速影响）
+    const naturalFrames = Math.ceil(
+      (timelineMsAtSource(warp, pcm.durationMs) / 1000) * this.sampleRate,
+    );
+    const total = ev.loop ? space : Math.min(naturalFrames, space);
     const gainBase = ev.volume;
     const fadeInFr = msToFrames(ev.fadeIn ?? 0, this.sampleRate);
     const fadeOutFr = msToFrames(ev.fadeOut ?? 0, this.sampleRate);
     for (let i = 0; i < total; i++) {
-      // loop 回卷或越界静音
-      const srcPos = ev.loop ? i % srcFrames : i;
-      if (!ev.loop && srcPos >= srcFrames) break;
-      const srcIdxF = srcPos * (srcRate / this.sampleRate);
-      const s0 = Math.floor(srcIdxF);
-      const frac = srcIdxF - s0;
+      // 时间线局部毫秒 → 源内毫秒；loop 在源空间回卷，越界（非 loop）静音收尾
+      const localMs = (i * 1000) / this.sampleRate;
+      const srcIdxF = (sourceMsAt(warp, localMs) / 1000) * srcRate;
+      const wrapped = ev.loop ? srcIdxF % srcFrames : srcIdxF;
+      if (!ev.loop && wrapped >= srcFrames) break;
+      const s0 = Math.floor(wrapped);
+      const frac = wrapped - s0;
       let gain = gainBase;
       if (fadeInFr > 0 && i < fadeInFr) gain *= i / fadeInFr;
       if (fadeOutFr > 0 && i >= total - fadeOutFr)

@@ -1,4 +1,6 @@
 import type {
+  AudioClipRef,
+  AudioOptions,
   LoopSpec,
   Ms,
   Scene,
@@ -137,18 +139,7 @@ export class Recorder implements SceneEnv {
     this.nodes.push({ kind: "transition", next, anchor: this.cursor });
   }
 
-  audio(
-    clip: { url: string },
-    options?: {
-      at?: Ms;
-      volume?: number;
-      fadeIn?: Ms;
-      fadeOut?: Ms;
-      loop?: boolean;
-      channels?: number;
-      pan?: number;
-    },
-  ): void {
+  audio(clip: AudioClipRef, options?: AudioOptions): void {
     this.nodes.push({
       kind: "audio",
       clipUrl: clip.url,
@@ -157,21 +148,7 @@ export class Recorder implements SceneEnv {
     });
   }
 
-  bgm(
-    clip: { url: string },
-    options?: Omit<
-      {
-        at?: Ms;
-        volume?: number;
-        fadeIn?: Ms;
-        fadeOut?: Ms;
-        loop?: boolean;
-        channels?: number;
-        pan?: number;
-      },
-      "at"
-    >,
-  ): void {
+  bgm(clip: AudioClipRef, options?: Omit<AudioOptions, "at">): void {
     // bgm 糖：缺省循环播放（显式 loop:false 仍可覆盖）
     this.audio(clip, { ...options, loop: options?.loop ?? true });
   }

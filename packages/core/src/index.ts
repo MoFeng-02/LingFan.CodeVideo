@@ -56,12 +56,11 @@ function assemble(opts: RenderOptions): {
     assets: opts.assets ?? makeDefaultAssets(),
   });
   // 位图来源：每帧新建（确定性不依赖对象复用；ImageBitmap 路径归 GPU 适配器）。
-  // 非占位：真画布时逐帧清屏——fn 直接 2d 绘制，上一帧残留必须清掉
+  // 全部为零 = 占位：预览画面由 step 回调直接画在 canvas 上，此位图只占协议位；
+  // 真像素源（离屏渲染 → ImageBitmap）归渲染适配器实现。
   engine.setPainter((f, t) => {
     void f;
     void t;
-    if (!opts.headless && canvas instanceof HTMLCanvasElement)
-      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     const data = new Uint8ClampedArray(opts.width * opts.height * 4);
     return { data, width: opts.width, height: opts.height };
   });
@@ -91,13 +90,14 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
   );
   // 音频：事件表 → AudioClock 混音 → exporter.writeAudio（缺省 = 纯视频导出）
   if (options.audio && summary.audioEvents.length > 0 && exporter.writeAudio) {
-    const samples = await options.audio.renderTimeline(
+    const clock = options.audio;
+    const samples = await clock.renderTimeline(
       summary.durationMs,
-      options.fps,
       summary.audioEvents,
     );
-    // 单段全时间线样本（离线混音产物）：一次 writeAudio 交整轨
-    for (const s of samples) await exporter.writeAudio(s.data, 48_000, 2);
+    // 块序列自 0 起连续：按序拼接即整轨，布局取自时钟声明（不猜采样率/声道数）
+    for (const s of samples)
+      await exporter.writeAudio(s.data, clock.sampleRate, clock.channels);
   }
   return {
     frames: summary.frames,

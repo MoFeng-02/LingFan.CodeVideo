@@ -37,6 +37,20 @@ const CLIPS: SynthClipSpec[] = [
     },
   },
   {
+    // 节拍器：1 秒 4 击（250ms 一格 = 120BPM），击点为 1200Hz 指数衰减，循环无缝。
+    // 变速时密度与音高同时变化——用来听「加速/恢复」是否与时间线一致。
+    url: "tick",
+    durationMs: 1000,
+    channels: 2,
+    sample(frame, _ch, rate) {
+      const beatMs = 250;
+      const ms = (frame / rate) * 1000;
+      const phase = ms % beatMs;
+      const t = phase / 1000;
+      return 0.5 * Math.sin(2 * Math.PI * 1200 * t) * Math.exp(-t * 60);
+    },
+  },
+  {
     // 扫频噪声：确定性的伪随机噪声（LCG）+ 包络，模拟转场风声
     url: "whoosh",
     durationMs: 700,
@@ -62,7 +76,7 @@ export function makeSynthLoader(ctx: AudioContext) {
     const spec = CLIPS.find((c) => c.url === url);
     if (!spec)
       throw new Error(
-        `synth loader：未登记的音源 '${url}'（示例只内置 pad/blip/whoosh）`,
+        `synth loader：未登记的音源 '${url}'（示例只内置 pad/blip/tick/whoosh）`,
       );
     const frames = Math.round((spec.durationMs / 1000) * ctx.sampleRate);
     const buffer = ctx.createBuffer(spec.channels, frames, ctx.sampleRate);

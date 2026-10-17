@@ -89,7 +89,7 @@ describe("OfflineAudioMixer 混音", () => {
   it("单事件铺轨：位置、音量、声道复制（单声道源 → 双声道输出）", async () => {
     const pcm = synthPcm(100, 1, 0.5); // 单声道源
     const mixer = makeMixer(new Map([["one", pcm]]));
-    const samples = await mixer.renderTimeline(200, FPS, [
+    const samples = await mixer.renderTimeline(200, [
       {
         clipUrl: "one",
         globalAtMs: 50,
@@ -119,7 +119,7 @@ describe("OfflineAudioMixer 混音", () => {
         ["y", synthPcm(100, 1, 0.5)],
       ]),
     );
-    const samples = await mixer.renderTimeline(100, FPS, [
+    const samples = await mixer.renderTimeline(100, [
       { clipUrl: "x", globalAtMs: 0, volume: 1, loop: false, pan: 0 },
       { clipUrl: "y", globalAtMs: 0, volume: 1, loop: false, pan: 0 },
     ]);
@@ -129,7 +129,7 @@ describe("OfflineAudioMixer 混音", () => {
 
   it("loop 平铺：100ms 源铺满 250ms 窗（回卷 1.5 圈）", async () => {
     const mixer = makeMixer(new Map([["lp", synthPcm(100, 1, 0.4)]]));
-    const samples = await mixer.renderTimeline(250, FPS, [
+    const samples = await mixer.renderTimeline(250, [
       { clipUrl: "lp", globalAtMs: 0, volume: 1, loop: true, pan: 0 },
     ]);
     const data = samples[0]!.data;
@@ -142,7 +142,7 @@ describe("OfflineAudioMixer 混音", () => {
   it("fadeIn 包络：起点 0 → 淡入期线性上升", async () => {
     const mixer = makeMixer(new Map([["fd", synthPcm(200, 1, 1)]]));
     const fadeInMs = 100;
-    const samples = await mixer.renderTimeline(200, FPS, [
+    const samples = await mixer.renderTimeline(200, [
       {
         clipUrl: "fd",
         globalAtMs: 0,
@@ -163,12 +163,12 @@ describe("OfflineAudioMixer 混音", () => {
 
   it("pan 摆位：pan=-1 全左（右声道 0）、pan=0.5 右声道衰减", async () => {
     const mixer = makeMixer(new Map([["pn", synthPcm(50, 1, 1)]]));
-    const left = await mixer.renderTimeline(50, FPS, [
+    const left = await mixer.renderTimeline(50, [
       { clipUrl: "pn", globalAtMs: 0, volume: 1, loop: false, pan: -1 },
     ]);
     expect(left[0]!.data[0]!).toBeCloseTo(1, 5);
     expect(left[0]!.data[1]!).toBe(0);
-    const mid = await mixer.renderTimeline(50, FPS, [
+    const mid = await mixer.renderTimeline(50, [
       { clipUrl: "pn", globalAtMs: 0, volume: 1, loop: false, pan: 0.5 },
     ]);
     expect(mid[0]!.data[0]!).toBeCloseTo(0.5, 5); // 1 - 0.5

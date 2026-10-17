@@ -4,7 +4,7 @@
  *
  * 预览四件套：
  * 1. 用户 canvas 传入 RenderOptions —— step 回调的 ctx.canvas 就是它，2d 绘制直接可见；
- * 2. PacedFrameSink —— 每帧对齐「时间戳 → 墙钟」推进，预览按真实时长播放；
+ * 2. PacedPreviewExporter —— 每帧对齐「时间戳 → 墙钟」推进，预览按真实时长播放；
  * 3. onAudioScript —— 时间线建好即拿到音频事件表，WebAudio 预排（多实例/循环/声道/摆位）；
  * 4. 引擎照旧确定性采样（变帧率网格），预览只是消费端，不改时间线语义。
  */
@@ -13,18 +13,24 @@ import { render } from "@lingfan-video/core";
 import { WebAudioPlayer } from "@lingfan-video/infra";
 import type {
   AudioTimelineEvent,
+  ExportFormat,
+  ExportResult,
+  Exporter,
+  ExporterImpl,
   FrameBitmap,
-  FrameIndex,
-  FrameSink,
   Ms,
   Scene,
   StepContext,
 } from "@lingfan-video/contracts";
 import { makeSynthLoader } from "./audio-assets";
 
-/** 按时间戳对齐墙钟的预览 sink（变帧率下网格非均匀：按真时间播放） */
-class PacedFrameSink implements FrameSink {
+/** 预览导出器：不编码（impl/format = frames），只把每帧按真实时间戳排队放出（变帧率下按绝对时间播放） */
+class PacedPreviewExporter implements Exporter {
+  readonly impl: ExporterImpl = "frames";
+  readonly format: ExportFormat = "frames";
   private startWall = 0;
+  private frames = 0;
+  private lastMs = 0;
 
   constructor(
     private readonly target: HTMLCanvasElement,
@@ -33,12 +39,10 @@ class PacedFrameSink implements FrameSink {
     void this.target;
   }
 
-  async writeFrame(
-    frame: FrameBitmap,
-    _index: FrameIndex,
-    timestampMs: Ms,
-  ): Promise<void> {
+  async writeFrame(frame: FrameBitmap, timestampMs: Ms): Promise<void> {
     void frame; // CPU 占位位图（全 0）：可见画面来自 fn 直接绘制，不叠加
+    this.frames++;
+    this.lastMs = timestampMs;
     if (this.startWall === 0) this.startWall = performance.now();
     // 暂停累计：恢复后不追帧
     if (this.paused()) {
@@ -50,9 +54,19 @@ class PacedFrameSink implements FrameSink {
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   }
 
-  async finalize(): Promise<void> {}
+  async finalize(): Promise<ExportResult> {
+    return {
+      output: "(preview)",
+      frames: this.frames,
+      durationMs: this.lastMs,
+      format: "frames",
+    };
+  }
+
   reset(): void {
     this.startWall = 0;
+    this.frames = 0;
+    this.lastMs = 0;
   }
 }
 
@@ -123,11 +137,25 @@ const act2 = act1.cutTo(2000, (prev, env) => {
   // 多实例 + 立体声摆位：同一音源左右各一击，重叠即叠加
   env.audio({ url: "blip" }, { at: 300, pan: -0.8, volume: 0.6 });
   env.audio({ url: "blip" }, { at: 340, pan: 0.8, volume: 0.6 });
+  // 变速：0–600ms 内 2 倍速（700ms 源压进 600ms），随后插回斜率 1 恢复原速；
+  // 源空间回卷（loop），所以叠加上去是「越来越密的节拍再突然回落」。
+  env.audio(
+    { url: "tick" },
+    {
+      volume: 0.3,
+      loop: true,
+      warp: [
+        { atMs: 0, srcMs: 0 },
+        { atMs: 600, srcMs: 1200 },
+        { atMs: 1000, srcMs: 1600 },
+      ],
+    },
+  );
   env.step(2000, (ctx) => {
     return title(
       ctx,
       `${prev.title} :: 第二幕`,
-      `t = ${ctx.t.toFixed(0)}ms · 铺底循环 + 左右声像`,
+      `t = ${ctx.t.toFixed(0)}ms · 铺底循环 + 左右声像 + 节拍变速`,
     );
   });
   return { title: `${prev.title} 完` };
@@ -135,8 +163,22 @@ const act2 = act1.cutTo(2000, (prev, env) => {
 
 const act3 = act2.cutTo(800, (prev, env) => {
   env.audio({ url: "whoosh" }, { at: 0, volume: 0.8, fadeIn: 100 });
+  // 自然退出：把 2s 铺底压缩到 800ms（warp 末锚点 "end"），结尾与幕边界对齐
+  env.audio(
+    { url: "pad" },
+    {
+      volume: 0.5,
+      fadeIn: 100,
+      fadeOut: 200,
+      warp: [
+        { atMs: 0, srcMs: 0 },
+        { atMs: 800, srcMs: "end" },
+      ],
+    },
+  );
   env.step(800, (ctx) => {
-    return title(ctx, "第三幕 · 收尾", `${prev.title} → 转场风声`);
+    bg(ctx); // 整幅重绘（预览不逐帧清屏，未重绘的区域会留下上一帧）
+    return title(ctx, "第三幕 · 收尾", `${prev.title} → 转场风声 + 加速收束`);
   });
 });
 void act3;
@@ -149,7 +191,7 @@ const playBtn = document.getElementById("play") as HTMLButtonElement;
 let paused = false;
 let busy = false;
 
-const sink = new PacedFrameSink(stage, () => paused);
+const sink = new PacedPreviewExporter(stage, () => paused);
 let audio: { ctx: AudioContext; player: WebAudioPlayer } | null = null;
 const pendingEvents: AudioTimelineEvent[] = [];
 
@@ -199,7 +241,7 @@ async function play(): Promise<void> {
         hud.textContent = `帧 ${done}/${total} · 音频事件 ${pendingEvents.length}`;
       },
     });
-    hud.textContent = `完成：${result.frames} 帧 / ${result.durationMs}ms · 音频 ${pendingEvents.length} 事件（多实例/循环/声像）· 可重播`;
+    hud.textContent = `完成：${result.frames} 帧 / ${result.durationMs}ms · 音频 ${pendingEvents.length} 事件（多实例/循环/声像/变速）· 可重播`;
   } finally {
     busy = false;
     playBtn.disabled = false;

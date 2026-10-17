@@ -14,3 +14,10 @@ export type {
 } from "./audio/offline-mixer";
 export { WebAudioPlayer } from "./audio/web-audio-player";
 export type { AudioBufferLoader } from "./audio/web-audio-player";
+export {
+  rateSegments,
+  resolveWarp,
+  sourceMsAt,
+  timelineMsAtSource,
+} from "./audio/warp";
+export type { ResolvedWarp, WarpRateSegment } from "./audio/warp";

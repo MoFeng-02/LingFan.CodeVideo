@@ -4,6 +4,7 @@
  * 仅浏览器环境可用（AudioContext 为平台 API）；Node 下不要装配。
  */
 import type { AudioTimelineEvent, Ms } from "@lingfan-video/contracts";
+import { rateSegments, resolveWarp, timelineMsAtSource } from "./warp";
 
 /** 资源加载：把 clip url 变成 AudioBuffer（宿主注入，通常 fetch + decodeAudioData） */
 export type AudioBufferLoader = (url: string) => Promise<AudioBuffer>;
@@ -36,14 +37,18 @@ export class WebAudioPlayer {
       // 已过起点的事件不再补播（预览从时间线头部开始）
       if (start < this.ctx.currentTime) continue;
       const remainingMs = durationMs - ev.globalAtMs;
+      const sourceMs = buffer.duration * 1000;
+      const warp = resolveWarp(ev.warp, sourceMs);
+      // 非 loop：源播完（变速下时长随映射变化）即静音
+      const naturalMs = timelineMsAtSource(warp, sourceMs);
       const durSec = Math.max(
         0,
         ev.loop
           ? remainingMs / 1000
-          : Math.min(buffer.duration, remainingMs / 1000),
+          : Math.min(naturalMs / 1000, remainingMs / 1000),
       );
       if (durSec <= 0) continue;
-      this.scheduleEvent(ev, buffer, start, durSec);
+      this.scheduleEvent(ev, buffer, start, durSec, warp);
     }
   }
 
@@ -64,6 +69,7 @@ export class WebAudioPlayer {
     buffer: AudioBuffer,
     start: number,
     durSec: number,
+    warp: ReturnType<typeof resolveWarp>,
   ): void {
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
@@ -73,6 +79,7 @@ export class WebAudioPlayer {
       src.channelCount = Math.max(1, ev.channels);
       src.channelCountMode = "explicit";
     }
+    this.applyWarp(src.playbackRate, warp, start);
     const gain = this.ctx.createGain();
     this.applyGainEnvelope(gain, ev, start, durSec);
     let tail: AudioNode = gain;
@@ -84,8 +91,27 @@ export class WebAudioPlayer {
     }
     src.connect(gain);
     tail.connect(this.ctx.destination);
-    src.start(start);
+    // 起点偏移：映射首点声明的源位置（无 warp 时恒为 0）
+    src.start(start, Math.max(0, warp.points[0]!.srcMs / 1000));
     this.sources.push(src);
+  }
+
+  /**
+   * 变速：分段线性映射 → 逐段 playbackRate 跳变（同一张 warp 表，与导出端同源）。
+   * playbackRate 的重采样即磁带式变调——预览侧与离线混音的音高/时长一致。
+   */
+  private applyWarp(
+    rate: AudioParam,
+    warp: ReturnType<typeof resolveWarp>,
+    start: number,
+  ): void {
+    const segs = rateSegments(warp);
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i]!;
+      const at = start + seg.fromMs / 1000;
+      if (i === 0) rate.setValueAtTime(seg.rate, Math.max(start, at));
+      else rate.setValueAtTime(seg.rate, at);
+    }
   }
 
   /** 音量与淡入淡出：以事件起点/终点为锚的线性包络 */

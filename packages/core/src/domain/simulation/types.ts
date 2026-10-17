@@ -1,4 +1,5 @@
 import type {
+  AudioOptions,
   FrameState,
   LoopContext,
   Ms,
@@ -6,6 +7,7 @@ import type {
   SceneEnv,
   SetupEnv,
   StepFn,
+  WarpPoint,
 } from "@lingfan-video/contracts";
 
 /** 登记期节点树（SceneEnv 回调捕获的中间表示） */
@@ -44,15 +46,7 @@ export type SimNode =
   | {
       kind: "audio";
       clipUrl: string;
-      options: {
-        at?: Ms;
-        volume?: number;
-        fadeIn?: Ms;
-        fadeOut?: Ms;
-        loop?: boolean;
-        channels?: number;
-        pan?: number;
-      };
+      options: AudioOptions;
       anchor: Ms;
     };
 
@@ -116,6 +110,8 @@ export interface CompiledAudio {
   channels?: number;
   /** 立体声摆位 -1~1（缺省 0 居中） */
   pan: number;
+  /** 时间映射锚点（atMs 相对事件起点；undefined = 原速） */
+  warp?: readonly WarpPoint[];
 }
 
 /** 单段编译结果（衔接下一片段由 runtime 链式推进） */

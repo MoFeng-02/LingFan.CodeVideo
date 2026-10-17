@@ -142,6 +142,7 @@ export function compileSegment(
             loop: o.loop ?? false,
             channels: o.channels,
             pan: o.pan ?? 0,
+            warp: o.warp,
           });
           break;
         }

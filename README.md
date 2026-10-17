@@ -53,10 +53,11 @@ tests/               集中式单元/端到端测试，不是包
 - **变帧率**：单元可声明 `fps`（三级继承：单元 > spawn 链 > `RenderOptions.fps`）；采样网格 = 各活跃单元自身网格点并集，空窗不产帧。
 - **保活**：`forever` spawn 活到总链尾，链内容播完后循环重放；`kill`/`dispose` 即停。
 - **音频**：时间线事件（不占帧池、不改 step 模型）；多实例并存，支持音量/淡入淡出/循环/声道/立体声摆位；导出走确定性离线混音，预览走 WebAudio 预排。
+- **音频变速**：`warp` 分段线性时间映射——突然加速/恢复/不恢复、`srcMs:"end"` 自动填满区间、踩点；变速即变调（磁带式）。两端共用同一张表（`infra/audio/warp.ts`），预览用 `playbackRate` 自动化表达。
 
 ## 文档
 
 - 规约索引：[私有文档/CodeVideo规约/README.md](私有文档/CodeVideo规约/README.md)
-- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环）
+- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速）
 - 契约设计规则：[13 号](私有文档/CodeVideo规约/13-contract-design.md)
 - 目录规划：[14 号](私有文档/CodeVideo规约/14-directory-plan.md)

@@ -164,8 +164,61 @@ function checkNodes(
       case "transition":
         return; // 提前收窗：其后节点不活跃，不再检查
       case "audio":
+        checkAudioWarp(path, n, errors);
         break;
     }
+  }
+}
+
+/**
+ * 音频时间映射检查：锚点时间严格递增、源位置单调（速率必为正，禁倒放）、
+ * 源尾标志 "end" 仅允许末位（否则其后的锚点无意义）。
+ */
+function checkAudioWarp(
+  path: string,
+  n: Extract<SimNode, { kind: "audio" }>,
+  errors: ValidationError[],
+): void {
+  const warp = n.options.warp;
+  if (warp === undefined) return;
+  const tag = `audio "${n.clipUrl}" warp`;
+  const push = (message: string): void => {
+    errors.push({ path, code: "spec_violation", message });
+  };
+  if (warp.length === 0) {
+    push(`${tag} 为空数组（省略即原速；空数组无意义）`);
+    return;
+  }
+  let prevAt = -Infinity;
+  let prevSrc = -Infinity;
+  for (let i = 0; i < warp.length; i++) {
+    const p = warp[i]!;
+    if (!Number.isFinite(p.atMs) || p.atMs < 0) {
+      push(`${tag} 第 ${i} 点 atMs=${p.atMs} 非法（须为 ≥0 的有限毫秒）`);
+      continue;
+    }
+    if (p.atMs <= prevAt) {
+      push(`${tag} 第 ${i} 点 atMs=${p.atMs} 未严格递增（前一点 ${prevAt}）`);
+    }
+    prevAt = p.atMs;
+    if (p.srcMs === "end") {
+      if (i !== warp.length - 1) {
+        push(`${tag} 第 ${i} 点 srcMs="end" 只允许末位（源尾之后无锚点可言）`);
+      }
+      continue;
+    }
+    if (!Number.isFinite(p.srcMs) || p.srcMs < 0) {
+      push(
+        `${tag} 第 ${i} 点 srcMs=${String(p.srcMs)} 非法（须为 ≥0 的有限毫秒或 "end"）`,
+      );
+      continue;
+    }
+    if (p.srcMs <= prevSrc) {
+      push(
+        `${tag} 第 ${i} 点 srcMs=${p.srcMs} 未递增（前一点 ${prevSrc}）——速率须为正，禁倒放`,
+      );
+    }
+    prevSrc = p.srcMs;
   }
 }
 
