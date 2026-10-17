@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { TimelineEngine, clip, start } from "@lingfan-video/core";
-import type { AudioVoice, Ms, Scene } from "@lingfan-video/contracts";
+import type { AudioVoice, Scene } from "@lingfan-video/contracts";
 
 async function voicesOf(
   scene: Scene<unknown>,

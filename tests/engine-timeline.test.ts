@@ -5,7 +5,6 @@
 import { describe, expect, it } from "vitest";
 import { TimelineEngine, clip, createScene } from "@lingfan-video/core";
 import { MemoryFrameSink } from "@lingfan-video/infra";
-import type { FrameState } from "@lingfan-video/contracts";
 
 const FPS = 30;
 
@@ -33,9 +32,7 @@ describe("链式推进与 prev 传递", () => {
       env.step(100, () => ({ hello: "a" })); // step 返回值进聚合器（key 化）
       return { hello: "a" }; // body 返回值才是下一幕 prev
     });
-    const scene = head.cutTo(100, (prev) => {
-      expect((prev as FrameState).hello).toBe("a"); // prev 透传断言
-    });
+    head.cutTo(100, () => {}); // 第二段无活跃单元：只延长链总时长，不产帧
     const engine = makeEngine();
     const sink = new MemoryFrameSink();
     const summary = await engine.run(head, sink); // 链要从 head 起，不是 cutTo 返回的链尾

@@ -2,7 +2,6 @@ import type { Ms } from "@lingfan-video/contracts";
 import { compileSegment } from "../../domain/simulation";
 import { Recorder } from "../../domain/simulation/dsl";
 import type {
-  CompiledAudio,
   CompiledSegment,
   SceneEntry,
   SceneInternal,

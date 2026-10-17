@@ -18,7 +18,7 @@ import {
   WebAudioOutput,
   WebCodecsExporter,
 } from "@lingfan-video/infra";
-import { clip, gain, loop, pan, rate, warp } from "@lingfan-video/core";
+import { clip, gain, loop, pan, warp } from "@lingfan-video/core";
 import type {
   AudioHandle,
   AudioOutput,

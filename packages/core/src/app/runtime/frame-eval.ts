@@ -1,9 +1,6 @@
 import { SYNTH_CLIP } from "../../domain/audio/synth-clip";
 import type {
-  AudioClip,
   AudioGraphEnv,
-  AudioHandle,
-  AudioOptions,
   FrameIndex,
   LoopContext,
   Ms,

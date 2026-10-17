@@ -3,14 +3,7 @@
  * 有声音却缺出口/缺时钟时报错而不是静默丢声。
  */
 import { describe, expect, it } from "vitest";
-import {
-  TimelineEngine,
-  clip,
-  createScene,
-  gain,
-  render,
-  start,
-} from "@lingfan-video/core";
+import { TimelineEngine, clip, gain, render, start } from "@lingfan-video/core";
 import { MemoryFrameSink } from "@lingfan-video/infra";
 import type {
   AudioSample,

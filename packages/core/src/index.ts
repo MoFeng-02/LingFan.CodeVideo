@@ -13,11 +13,8 @@ import type {
   FrameSink,
   Ms,
   RenderOptions,
-  RenderResult,
-  Scene,
   ValidateFn,
 } from "@lingfan-video/contracts";
-import { msToFrames, timestampAt } from "./domain/time-math/time-math";
 import { validate } from "./domain/validation";
 import type { SceneInternal } from "./domain/simulation/types";
 import { TimelineEngine, type EngineOptions } from "./app/runtime";
@@ -232,7 +229,7 @@ function exporterAdapter(exporter: Exporter): FrameSink & {
   return {
     writeFrame(
       frame: FrameBitmap,
-      index: FrameIndex,
+      _index: FrameIndex,
       timestampMs: Ms,
     ): void | Promise<void> {
       return exporter.writeFrame(frame, timestampMs);

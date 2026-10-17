@@ -108,17 +108,6 @@ export class OfflineAudioMixer implements AudioClock {
     return this.decoder.decode(voice.clip);
   }
 
-  private async decodeCached(
-    cache: Map<string, DecodedPcm>,
-    clip: AudioClip,
-  ): Promise<DecodedPcm> {
-    const hit = cache.get(clip.url);
-    if (hit) return hit;
-    const pcm = await this.decoder.decode(clip);
-    cache.set(clip.url, pcm);
-    return pcm;
-  }
-
   /** 单声音铺轨：时间映射（含变速/运行期 setRate）→ 重采样（线性）→ 声道映射 → 包络 → pan */
   private layoutVoice(
     voice: AudioVoice,
