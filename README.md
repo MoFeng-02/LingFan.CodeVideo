@@ -68,5 +68,6 @@ tests/               集中式单元/端到端测试，不是包
 - 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟、§9.13 消杀与消亡过程、§9.14 帧来源缺失显式化）
 - 契约设计规则：[13 号](私有文档/CodeVideo规约/13-contract-design.md)
 - 目录规划：[14 号](私有文档/CodeVideo规约/14-directory-plan.md)
+- B 阶段设计与裁决（游戏判据、wait 回调、事件去重、音频图 bus/sends/ducking）：[15 号](私有文档/CodeVideo规约/15-audio-graph-and-play-semantics.md)
 
 
