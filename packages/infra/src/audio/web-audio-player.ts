@@ -23,7 +23,9 @@ export class WebAudioPlayer {
 
   /**
    * 预排整条时间线：事件表 → 各事件的 source/gain/pan 节点，统一从上下文当前时刻起排。
-   * 事件时长：loop = 到时间线尾；否则 = 源缓冲自然长度。
+   * 事件寿命 = min(源播完所需时间, 到时间线尾的剩余)：
+   * - 非 loop：源播完（变速下时长随映射变化）即收声；
+   * - loop：铺到时间线尾为止——总时间线是唯一终界，预览与导出同规（导出端同样裁齐到缓冲尽头）。
    */
   async play(
     events: readonly AudioTimelineEvent[],
@@ -39,7 +41,6 @@ export class WebAudioPlayer {
       const remainingMs = durationMs - ev.globalAtMs;
       const sourceMs = buffer.duration * 1000;
       const warp = resolveWarp(ev.warp, sourceMs);
-      // 非 loop：源播完（变速下时长随映射变化）即静音
       const naturalMs = timelineMsAtSource(warp, sourceMs);
       const durSec = Math.max(
         0,
@@ -93,6 +94,8 @@ export class WebAudioPlayer {
     tail.connect(this.ctx.destination);
     // 起点偏移：映射首点声明的源位置（无 warp 时恒为 0）
     src.start(start, Math.max(0, warp.points[0]!.srcMs / 1000));
+    // 终止点：节点在事件终点收声并释放。loop 源本身无限长，不显式 stop 会越过时间线尾一直响
+    src.stop(start + durSec);
     this.sources.push(src);
   }
 
@@ -135,7 +138,7 @@ export class WebAudioPlayer {
       g.setValueAtTime(ev.volume, end - fadeOut);
       g.linearRampToValueAtTime(0, end);
     }
-    // 事件自然结束（非 loop）在终点收声
-    if (!ev.loop) g.setValueAtTime(0, end);
+    // 事件终点一律收声（loop 也一样）：总时间线是唯一终界，越过尾部的余响不保留
+    g.setValueAtTime(0, end);
   }
 }
