@@ -39,14 +39,15 @@ describe("链式推进与 prev 传递", () => {
     const engine = makeEngine();
     const sink = new MemoryFrameSink();
     const summary = await engine.run(head, sink); // 链要从 head 起，不是 cutTo 返回的链尾
-    expect(summary.frames).toBe(6); // floor(200*30/1000)
+    // 第二段无任何活跃单元（空窗不产帧）：只有第一段 step 的采样点 0/33.3/66.7ms
+    expect(summary.frames).toBe(3);
     expect(summary.durationMs).toBe(200);
   });
 
-  it("帧数换算：durationMs*fps/1000 向下取整", async () => {
-    const scene = createScene(150, () => {}); // 150ms @30fps = 4.5 → 4 帧
+  it("空剧本（无任何单元）不产帧：语义层单位是毫秒，采样密度由活跃单元决定", async () => {
+    const scene = createScene(150, () => {}); // 150ms 但没有任何登记
     const summary = await makeEngine().run(scene, new MemoryFrameSink());
-    expect(summary.frames).toBe(4);
+    expect(summary.frames).toBe(0);
   });
 });
 
@@ -80,7 +81,8 @@ describe("spawn 链与保活", () => {
     const sink = new MemoryFrameSink();
     const summary = await engine.run(main, sink);
     expect(killed).toBe(true);
-    expect(summary.frames).toBe(6);
+    // 活跃采样点只有 step 的 0/33.3/66.7ms（wait 空窗、bg 链无单元都不产帧）
+    expect(summary.frames).toBe(3);
   });
 
   it("同 key 二次 spawn 续接（不重叠新建）", async () => {
@@ -169,15 +171,47 @@ describe("transitionTo（提前收窗）", () => {
       env.step(100, () => ({ phase: "first" }));
       env.transitionTo(tail);
     });
-    // 锚定 100ms 处 spawn 该链（300ms 短路 → 实际内容 200ms）
+    // 锚定 100ms 处 spawn 该链（300ms 短路 → 实际内容 200ms）：
+    // 登记期 spawn 在 step(100) 之后，cursor=100 即锚点
     const host = createScene(600, (_prev, env) => {
-      env.step(100, () => env.spawn(first, { key: "ch" }));
+      env.step(100, () => ({ phase: "host" }));
+      env.spawn(first, { key: "ch" });
     });
     const engine = makeEngine();
     const summary = await engine.run(host, new MemoryFrameSink());
     // 链起点 100 + 实际内容 200 = 链尾 300（修复前会虚高到 100+300+500=900）
-    // 链死后的 400ms 空窗不该画出 tail 内容：tail 的 step 在 300ms 后不存在
+    // 链死后的 400ms 空窗不该画出 tail 内容；空窗也不产帧
+    // 采样点：host step 0/33.3/66.7 + 链 first step 100/133.3/166.7 + tail step 200/233.3/266.7 = 9
     expect(summary.durationMs).toBe(600);
-    expect(summary.frames).toBe(18);
+    expect(summary.frames).toBe(9);
+  });
+
+  it("运行期 spawn（step 回调内 ctx.spawn）动态重采样：新链采样点即时入网", async () => {
+    const dyn = createScene(100, (_prev, env) => {
+      env.step(100, () => ({ phase: "dyn" }), { fps: 60 });
+    });
+    // spawn 锚定 100ms（登记期 step 占满 0..100 窗），运行期在首采样点 ctx.spawn
+    const host = createScene(200, (_prev, env) => {
+      env.step(100, () => ({ phase: "lead" }));
+      env.step(100, (ctx) => {
+        ctx.spawn(dyn, { key: "late" }); // 运行期 spawn（ctx 来源是 eval StepContext）
+        return { phase: "host" };
+      });
+    });
+    const summary = await makeEngine().run(host, new MemoryFrameSink());
+    // 主单元 0..200ms @30fps 7 点（0..200 端点不含 200）；dyn 链 100..200ms @60fps 新增 116.7/150/183.3 → 共 9
+    expect(summary.frames).toBe(9);
+    expect(summary.durationMs).toBe(200);
+  });
+
+  it("单元 fps 覆盖基础帧率：高帧率单元采样点更密", async () => {
+    // 基础 30fps；单元声明 60fps → 100ms 窗 7 点（0/16.7..100? 端点不含 → 0/16.7/33.3/50/66.7/83.3 共 6 点）
+    const scene = createScene(100, (_prev, env) => {
+      env.step(100, () => ({ phase: "hi" }), { fps: 60 });
+    });
+    const sink = new MemoryFrameSink();
+    const summary = await makeEngine().run(scene, sink);
+    expect(summary.frames).toBe(6);
+    expect(sink.timestamps.length).toBe(6);
   });
 });

@@ -14,12 +14,15 @@ import type {
  * - step.at 为窗外绝对偏移（越窗 → window_overflow 由 validate/render 报）
  * - spawn 锚点 = 登记 cursor + options.at
  * - transitionTo = 提前收窗：anchor 之后的本段节点不活跃
+ * - 单元有效帧率 = 单元声明 > 继承（spawn 链级）> 基础；编译期解析定死
  */
 export function compileSegment(
   sceneId: string,
   duration: Ms,
   nodes: SimNode[],
   bodyResult: unknown,
+  baseFps: number,
+  inheritedFps?: number,
 ): CompiledSegment {
   const units: CompiledUnit[] = [];
   const spawns: CompiledSpawn[] = [];
@@ -27,6 +30,9 @@ export function compileSegment(
   let activeEnd: Ms | undefined;
   let transitionNext: unknown;
   let order = 0;
+  /** 有效帧率解析：本节点声明优先，否则用外层继承 */
+  const effFps = (declared?: number): number =>
+    declared ?? inheritedFps ?? baseFps;
 
   const walk = (list: SimNode[], offset: Ms): Ms => {
     let local: Ms = offset;
@@ -40,6 +46,7 @@ export function compileSegment(
             windowStart: start,
             windowEnd: start + n.duration,
             hold: n.hold ?? false,
+            fps: effFps(n.fps),
             call: n.fn as CompiledUnit["call"],
             order: order++,
           });
@@ -52,6 +59,7 @@ export function compileSegment(
         }
         case "loop": {
           const iterMs = n.ms;
+          const loopFps = effFps(n.fps);
           if (iterMs === undefined) {
             // form-3：自管节奏，整段活跃，由 runtime 以 ctx.next()/stop() 驱动
             units.push({
@@ -59,6 +67,7 @@ export function compileSegment(
               windowStart: local,
               windowEnd: duration,
               hold: false,
+              fps: loopFps,
               call: n.fn as CompiledUnit["call"],
               loop: { iteration: 0 },
               loopBase: `loop#form3#${order}`,
@@ -76,6 +85,7 @@ export function compileSegment(
                 windowStart: s,
                 windowEnd: Math.min(s + iterMs, local + window),
                 hold: false,
+                fps: loopFps,
                 call: n.fn as CompiledUnit["call"],
                 loop: { iteration: it, iterationMs: iterMs },
                 loopBase: `loop#${order}`,
@@ -88,7 +98,7 @@ export function compileSegment(
           break;
         }
         case "par": {
-          // 分支共享起点各自推进；本层推进 = max(分支池)
+          // 分支共享起点各自推进；本层推进 = max(分支池)；分支继承同层 fps
           let maxPool: Ms = 0;
           for (const branch of n.children) {
             const branchEnd = walk(branch, local);
@@ -111,6 +121,8 @@ export function compileSegment(
             startGlobal: local + (n.options.at ?? 0),
             chainDuration,
             forever: n.options.forever ?? false,
+            // 链级基础帧率：显式 > 当前继承（链内单元再按自己声明覆盖）
+            chainFps: n.options.fps ?? inheritedFps,
           });
           break;
         }

@@ -3,7 +3,7 @@ import type { Handle, SpawnOptions } from "../scheduler";
 import type { AudioClipRef, AudioOptions } from "../audio";
 import type { LoopSpec, StepFn, StepOptions } from "./nodes";
 
-/** 帧号换算糖：f(n) = n * (1000 / fps) */
+/** 帧号换算糖：f(n) = n × (1000 / 单元有效帧率)——单元内语义，跨单元不可比 */
 export type FrameFn = (frameNumber: number) => Ms;
 
 /** 画布环境（登记与逐帧上下文共享的部分） */

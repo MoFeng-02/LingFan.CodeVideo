@@ -52,6 +52,7 @@ export function compileScene(
   state: TimelineState,
   scene: SceneInternal<unknown>,
   prev: unknown,
+  inheritedFps?: number,
 ): CompiledSegment {
   const { width, height, fps, headless, canvas } = state.opts;
   if (scene.setup) {
@@ -67,7 +68,14 @@ export function compileScene(
   }
   const rec = new Recorder(width, height, fps, headless, canvas);
   const result = scene.body(prev as never, rec);
-  return compileSegment(scene.id, scene.duration, rec.nodes, result);
+  return compileSegment(
+    scene.id,
+    scene.duration,
+    rec.nodes,
+    result,
+    fps,
+    inheritedFps,
+  );
 }
 
 /** setup 专用环境：assets 走组合根注入的 AssetSource（core 不认平台 API） */
@@ -109,6 +117,7 @@ export function expandSpawns(
       s.scene as SceneInternal<unknown>,
       spanStart + s.startGlobal,
       s.forever ? Infinity : s.chainDuration,
+      s.chainFps,
     );
     if (!chain) continue;
     chains.push(chain);
@@ -125,6 +134,7 @@ export function buildChain(
   head: SceneInternal<unknown>,
   start: Ms,
   duration: Ms,
+  chainFps?: number,
 ): SpawnChain | undefined {
   if (
     state.spawnChains.some(
@@ -149,7 +159,7 @@ export function buildChain(
   const seen = new Set<string>();
   while (sc && !seen.has(sc.id)) {
     seen.add(sc.id);
-    const seg = compileScene(state, sc, prev);
+    const seg = compileScene(state, sc, prev, chainFps);
     prev = seg.bodyResult;
     // 链长 = 实际内容：transition 短路段只计 activeEnd（与主链收窗同规则）
     const len = seg.activeEnd ?? seg.duration;

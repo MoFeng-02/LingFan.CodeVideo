@@ -44,7 +44,7 @@ export class FrameSequenceExporter implements Exporter {
     return this.captured.map((c) => c.frame);
   }
 
-  /** 测试便利：时间戳序列（应严格等于 timestampAt(i, fps) 递增） */
+  /** 测试便利：时间戳序列（变帧率下为采样网格点，非均匀） */
   get timestamps(): readonly Ms[] {
     return this.captured.map((c) => c.timestampMs);
   }

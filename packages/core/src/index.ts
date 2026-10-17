@@ -72,7 +72,7 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
     // 预览模式缺省未实装（实时呈现后续版本）；导出走注入的 exporter
     throw makeMissingExporter();
   }
-  const sink = exporterAdapter(exporter, options.fps);
+  const sink = exporterAdapter(exporter);
   const summary = await engine.run(
     scene as SceneInternal<unknown>,
     sink,
@@ -103,15 +103,18 @@ function makeHeadlessCanvas(
   return { width, height } as unknown as OffscreenCanvas;
 }
 
-/** Exporter → FrameSink 适配：帧序号 → 时间线毫秒（逐帧乘法）；ExportResult 经 getOutput 恰好一次取回 */
+/** Exporter → FrameSink 适配：引擎直出的真时间戳透传 exporter（变帧率下 index→时间戳非均匀映射）；ExportResult 经 getOutput 恰好一次取回 */
 function exporterAdapter(
   exporter: NonNullable<RenderOptions["exporter"]>,
-  fps: number,
 ): FrameSink & { getOutput(): Promise<ExportResult> } {
   let output: ExportResult | undefined;
   return {
-    writeFrame(frame: FrameBitmap, index: FrameIndex): void | Promise<void> {
-      return exporter.writeFrame(frame, timestampAt(index, fps));
+    writeFrame(
+      frame: FrameBitmap,
+      index: FrameIndex,
+      timestampMs: Ms,
+    ): void | Promise<void> {
+      return exporter.writeFrame(frame, timestampMs);
     },
     finalize: async () => {
       output = await exporter.finalize();
@@ -137,9 +140,9 @@ export const compute: ComputeFns = {
     const engine = new TimelineEngine(engineOptsForCompute());
     return engine.stateAt(scene as SceneInternal<unknown>, t);
   },
-  computeRange: async (scene, from, to, stepMs) => {
+  computeRange: async (scene, from, to) => {
     const engine = new TimelineEngine(engineOptsForCompute());
-    return engine.collect(scene as SceneInternal<unknown>, from, to, stepMs);
+    return engine.collect(scene as SceneInternal<unknown>, from, to);
   },
 };
 

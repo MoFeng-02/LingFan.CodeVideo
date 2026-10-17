@@ -6,12 +6,14 @@ import type {
   Ms,
 } from "@lingfan-video/contracts";
 import { StateAggregator } from "../../domain/simulation";
-import { msToFrames, timestampAt } from "../../domain/time-math/time-math";
-import type { EvalDeps, TimelineState } from "./engine-types";
-import type { SceneInternal } from "../../domain/simulation/types";
+import type {
+  CompiledUnit,
+  SceneInternal,
+} from "../../domain/simulation/types";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { buildTimeline } from "./timeline-build";
+import type { EvalDeps, TimelineState } from "./engine-types";
 
 /** 引擎可变状态装配（TimelineEngine 独占持有，原子单元经 EvalDeps 显式共享） */
 function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
@@ -23,6 +25,57 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     spans: [],
     timelineEnd: 0,
   };
+}
+
+/**
+ * 采样网格：各活跃单元在自己 fps 网格上的采样点并集。
+ * - 单元 fps 网格：第 n 点 = windowStart + n×(1000/fps)，取整微秒去重
+ * - hold 单元窗外冻结不加点（末点由窗口内网格覆盖）
+ * - 空窗（无任何单元）不产帧——语义层单位是毫秒，fps 只是采样密度
+ */
+export function buildSampleGrid(state: TimelineState): Ms[] {
+  const seen = new Set<number>(); // 微秒整数
+  const points: number[] = [];
+  const addUnit = (u: CompiledUnit, spanStart: Ms, spanEnd: Ms): void => {
+    const s = spanStart + u.windowStart;
+    const e = Math.min(spanStart + u.windowEnd, spanEnd);
+    for (let i = 0; ; i++) {
+      const tUs = Math.round((s + (i * 1000) / u.fps) * 1000);
+      if (tUs >= Math.round(e * 1000) || tUs < Math.round(s * 1000)) break;
+      if (!seen.has(tUs)) {
+        seen.add(tUs);
+        points.push(tUs);
+      }
+    }
+  };
+
+  const walkSpans = (spans: EvalDeps["state"]["spans"]): void => {
+    for (const span of spans) {
+      for (const u of span.seg.units) {
+        if (u.loop && u.loop.iterationMs === undefined) {
+          // form-3：自管节奏——采样点沿基础帧率推进（自管单元没有固定网格）
+          const s = span.start + u.windowStart;
+          const e = Math.min(span.start + u.windowEnd, span.end);
+          for (let tUs = Math.round(s * 1000); tUs < Math.round(e * 1000);) {
+            if (!seen.has(tUs)) {
+              seen.add(tUs);
+              points.push(tUs);
+            }
+            tUs += Math.round(1_000_000 / state.opts.fps);
+          }
+        } else {
+          addUnit(u, span.start, span.end);
+        }
+      }
+    }
+  };
+
+  for (const c of state.spawnChains) {
+    if (!c.killed) walkSpans(c.spans);
+  }
+  walkSpans(state.spans);
+  points.sort((a, b) => a - b);
+  return points.map((us) => us / 1000);
 }
 
 /**
@@ -47,57 +100,95 @@ export class TimelineEngine {
     this.painter = p;
   }
 
-  /** 正片渲染：[0, timelineEnd) 逐帧求值并交帧 */
+  /** 正片渲染：沿采样网格逐点求值并交帧；运行期 spawn 新增链 → 重建剩余网格（动态流式采样） */
   async run(
     head: SceneInternal<unknown>,
     sink: FrameSink,
     onProgress?: (done: number, total: number) => void,
   ): Promise<{ frames: number; durationMs: Ms; lastState: FrameState }> {
     this.buildTimeline(head);
-    const total = msToFrames(this.state.timelineEnd, this.state.opts.fps);
-    for (let f: FrameIndex = 0; f < total; f++) {
-      const t = timestampAt(f, this.state.opts.fps);
-      this.evaluateFrame(f, t);
+    let grid = buildSampleGrid(this.state);
+    let idx = 0;
+    let chainCount = this.state.spawnChains.length;
+    let written = 0;
+    while (idx < grid.length) {
+      const t = grid[idx]!; // 网格点已是毫秒
+      this.evaluateFrame(written, t);
       await sink.writeFrame(
-        this.painterPaint(f, t, this.aggregator.snapshot()),
-        f,
+        this.painterPaint(written, t, this.aggregator.snapshot()),
+        written,
+        t,
       );
-      onProgress?.(f + 1, total);
+      written++;
+      onProgress?.(written, grid.length);
+      idx++;
+      // 运行期 spawn（ctx.spawn/scheduler）在求值中追加链 → 重采样（严格晚于当前点）
+      if (this.state.spawnChains.length !== chainCount) {
+        chainCount = this.state.spawnChains.length;
+        grid = buildSampleGrid(this.state);
+        idx = grid.findIndex((u) => u > t);
+        if (idx < 0) break;
+      }
     }
     await sink.finalize();
     return {
-      frames: total,
+      frames: written,
       durationMs: this.state.timelineEnd,
       lastState: this.aggregator.full(),
     };
   }
 
-  /** computeRange：[from,to) 按 stepMs 步进采样完整状态表（同一次登记复用） */
+  /** computeRange：采样网格 ∩ [from,to) 逐点采样完整状态表（同一次登记复用；动态链同样重采样） */
   async collect(
     head: SceneInternal<unknown>,
     from: Ms,
     to: Ms,
-    stepMs: Ms,
   ): Promise<FrameState[]> {
     this.buildTimeline(head);
+    let grid = buildSampleGrid(this.state).filter(
+      (t) => t >= from && t < to && t < this.state.timelineEnd,
+    );
+    let idx = 0;
+    let chainCount = this.state.spawnChains.length;
     const out: FrameState[] = [];
-    for (let t = from; t < to && t < this.state.timelineEnd; t += stepMs) {
-      const f = Math.max(0, msToFrames(t, this.state.opts.fps));
-      this.evaluateFrame(f, timestampAt(f, this.state.opts.fps));
+    while (idx < grid.length) {
+      const t = grid[idx]!; // 网格点已是毫秒
+      this.evaluateFrame(out.length, t);
       out.push(this.aggregator.full());
+      idx++;
+      if (this.state.spawnChains.length !== chainCount) {
+        chainCount = this.state.spawnChains.length;
+        grid = buildSampleGrid(this.state).filter(
+          (x) => x >= from && x < to && x < this.state.timelineEnd,
+        );
+        idx = grid.findIndex((x) => x > t); // 严格晚于当前点
+        if (idx < 0) break;
+      }
     }
     return out;
   }
 
-  /** computeAt：t 所在帧（≤t 的最近帧）的完整状态表；越时间线尾 → undefined */
+  /** computeAt：≤t 的最近采样点的完整状态表；越时间线尾 → undefined */
   async stateAt(
     head: SceneInternal<unknown>,
     t: Ms,
   ): Promise<FrameState | undefined> {
     this.buildTimeline(head);
     if (t >= this.state.timelineEnd) return undefined;
-    const f = Math.max(0, msToFrames(t, this.state.opts.fps));
-    this.evaluateFrame(f, timestampAt(f, this.state.opts.fps));
+    const grid = buildSampleGrid(this.state);
+    // ≤t 的最近网格点（二分）
+    let lo = 0;
+    let hi = grid.length - 1;
+    let pick = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if ((grid[mid] ?? 0) <= t) {
+        pick = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    if (pick < 0) return undefined;
+    this.evaluateFrame(pick, grid[pick]!);
     return this.aggregator.full();
   }
 

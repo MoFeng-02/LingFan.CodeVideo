@@ -42,10 +42,11 @@ export type ValidateFn = (scene: Scene<unknown>) => ValidationError[];
 /** 状态抽取：登记不重跑；[0,from) 重放模拟只弃绘制与编码 */
 export interface ComputeFns {
   computeAt<P>(scene: Scene<P>, t: Ms): Promise<FrameState | undefined>;
+  /** 采样点 = 时间线采样网格（各单元自身帧率）∩ [from,to)；stepMs 保留参数位（兼容旧调用），网格密度优先 */
   computeRange<P>(
     scene: Scene<P>,
     from: Ms,
     to: Ms,
-    stepMs: Ms,
+    stepMs?: Ms,
   ): Promise<FrameState[]>;
 }

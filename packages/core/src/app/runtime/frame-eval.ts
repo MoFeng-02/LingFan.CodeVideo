@@ -72,18 +72,20 @@ function evalStep(
   chain: SpawnChain | null,
 ): void {
   const { opts } = deps.state;
-  const { fps, width, height, canvas } = opts;
+  const { width, height, canvas } = opts;
   const duration = unit.windowEnd - unit.windowStart;
+  // f(n)/deltaTime 以本单元有效帧率为基准（单元内语义，编译期已解析定死）
+  const uf = unit.fps;
   const ctx: StepContext = {
     canvas,
     width,
     height,
-    f: (n: number) => (n * 1000) / fps,
+    f: (n: number) => (n * 1000) / uf,
     t,
     frameIndex: f,
     totalTime: deps.state.timelineEnd,
-    fps,
-    deltaTime: 1000 / fps,
+    fps: uf,
+    deltaTime: 1000 / uf,
     localT: localIn,
     duration,
     progress: duration > 0 ? localIn / duration : 0,
@@ -110,17 +112,18 @@ function evalLoopIter(
   localIn: Ms,
   chain: SpawnChain | null,
 ): void {
-  const { fps, width, height, canvas } = deps.state.opts;
+  const { width, height, canvas } = deps.state.opts;
   const iterMs = unit.loop!.iterationMs!;
+  const uf = unit.fps;
   const ctx: LoopContext = {
     canvas,
     width,
     height,
-    f: (n: number) => (n * 1000) / fps,
+    f: (n: number) => (n * 1000) / uf,
     parentT: t - span.start,
     frameIndex: f,
-    fps,
-    deltaTime: 1000 / fps,
+    fps: uf,
+    deltaTime: 1000 / uf,
     iteration: unit.loop!.iteration,
     iterationT: localIn,
     iterationProgress: iterMs > 0 ? localIn / iterMs : 0,
@@ -151,21 +154,22 @@ function evalForm3(
   chain: SpawnChain | null,
   deadKey: string,
 ): void {
-  const { fps, width, height, canvas } = deps.state.opts;
+  const { width, height, canvas } = deps.state.opts;
   const cur = deps.state.form3.get(deadKey) ?? {
     iteration: 0,
     iterStart: localT,
   };
   if (!deps.state.form3.has(deadKey)) deps.state.form3.set(deadKey, cur);
+  const uf = unit.fps;
   const ctx: LoopContext = {
     canvas,
     width,
     height,
-    f: (n: number) => (n * 1000) / fps,
+    f: (n: number) => (n * 1000) / uf,
     parentT: t - span.start,
     frameIndex: f,
-    fps,
-    deltaTime: 1000 / fps,
+    fps: uf,
+    deltaTime: 1000 / uf,
     iteration: cur.iteration,
     iterationT: localT - cur.iterStart,
     iterationProgress: 0, // form-3 无迭代时长，进度自管

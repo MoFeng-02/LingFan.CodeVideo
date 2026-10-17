@@ -84,6 +84,13 @@ function checkNodes(
             code: "spec_violation",
             message: `step at=${n.at} 使起点为负`,
           });
+        // 单元声明帧率须为正（缺省 = 继承/基础，无需检查）
+        if (n.fps !== undefined && (!(n.fps > 0) || !Number.isFinite(n.fps)))
+          errors.push({
+            path,
+            code: "spec_violation",
+            message: `step fps=${n.fps} 非正数（采样密度须 > 0）`,
+          });
         if (start >= windowEnd || start + n.duration > windowEnd + 1e-6) {
           errors.push({
             path,
@@ -98,6 +105,12 @@ function checkNodes(
         cursor += n.duration;
         break;
       case "loop":
+        if (n.fps !== undefined && (!(n.fps > 0) || !Number.isFinite(n.fps)))
+          errors.push({
+            path,
+            code: "spec_violation",
+            message: `loop fps=${n.fps} 非正数（采样密度须 > 0）`,
+          });
         if (n.ms !== undefined)
           cursor += Math.min(n.ms * (n.times ?? Infinity), windowEnd - cursor);
         break;
@@ -134,6 +147,16 @@ function checkNodes(
             path,
             code: "spec_violation",
             message: `spawn "${n.options.key}" duration=${n.options.duration} 为负`,
+          });
+        }
+        if (
+          n.options.fps !== undefined &&
+          (!(n.options.fps > 0) || !Number.isFinite(n.options.fps))
+        ) {
+          errors.push({
+            path,
+            code: "spec_violation",
+            message: `spawn "${n.options.key}" fps=${n.options.fps} 非正数（采样密度须 > 0）`,
           });
         }
         break;

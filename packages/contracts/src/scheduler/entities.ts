@@ -24,4 +24,6 @@ export interface SpawnOptions {
   duration?: Ms;
   /** forever：寿命 = 总时间线尾或显式 kill()，时钟由全局时间线推导 */
   forever?: boolean;
+  /** 整条链的基础采样密度（链内单元未声明 fps 时继承；缺省 = 引擎基础帧率） */
+  fps?: number;
 }

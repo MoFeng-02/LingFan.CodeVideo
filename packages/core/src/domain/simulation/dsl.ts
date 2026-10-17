@@ -65,7 +65,9 @@ export class Recorder implements SceneEnv {
     let node: Extract<SimNode, { kind: "step" }>;
     if (typeof a === "function") {
       const opts = (b ?? {}) as StepOptions;
-      node = { kind: "step", duration: 1000 / this.fps, fn: a, ...opts };
+      // 默认时长 = 声明帧率下的一帧（未声明 = 基础帧率一帧）
+      const fps = opts.fps ?? this.fps;
+      node = { kind: "step", duration: 1000 / fps, fn: a, ...opts };
     } else {
       const opts = (c ?? {}) as StepOptions;
       node = { kind: "step", duration: a, fn: b as StepFn, ...opts };
@@ -79,6 +81,7 @@ export class Recorder implements SceneEnv {
       kind: "loop",
       ms: spec.ms,
       times: spec.times,
+      fps: spec.fps,
       fn: spec.fn,
     });
   }

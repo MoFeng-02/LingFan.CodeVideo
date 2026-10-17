@@ -141,7 +141,8 @@ describe("setup 执行（StartSpec.setup）", () => {
       writeFrame: () => {},
       finalize: async () => {},
     });
-    expect(summary.frames).toBe(30);
+    // step 250ms @60fps → 采样点 0..245ms 共 15 个（空窗不产帧；500ms 窗只采 250ms）
+    expect(summary.frames).toBe(15);
     expect(order).toEqual(["setup", "run"]);
 
     // 异步 setup 拒绝

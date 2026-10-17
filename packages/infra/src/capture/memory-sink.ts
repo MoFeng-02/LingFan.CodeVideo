@@ -5,15 +5,18 @@ import type {
   FrameBitmap,
   FrameIndex,
   FrameSink,
+  Ms,
 } from "@lingfan-video/contracts";
 
 export class MemoryFrameSink implements FrameSink {
   readonly frames: FrameBitmap[] = [];
   readonly indexes: FrameIndex[] = [];
+  readonly timestamps: Ms[] = [];
 
-  writeFrame(frame: FrameBitmap, index: FrameIndex): void {
+  writeFrame(frame: FrameBitmap, index: FrameIndex, timestampMs: Ms): void {
     this.frames.push(frame);
     this.indexes.push(index);
+    this.timestamps.push(timestampMs);
   }
 
   async finalize(): Promise<void> {

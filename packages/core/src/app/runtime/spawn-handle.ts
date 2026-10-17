@@ -18,7 +18,7 @@ export function dynamicSpawn(
 ): Handle {
   const explicit = options.forever ? Infinity : options.duration;
   const chain =
-    buildChain(deps.state, options.key, scene, t, explicit ?? 0) ??
+    buildChain(deps.state, options.key, scene, t, explicit ?? 0, options.fps) ??
     deps.state.spawnChains.find((c) => c.key === options.key && !c.killed)!;
   // 链长语义：显式 duration 覆盖；缺省 = 链内容之和（buildChain 按 transition 短路实况回填）
   if (explicit === Infinity)

@@ -17,14 +17,27 @@ export type SimNode =
       at?: Ms;
       after?: Ms;
       hold?: boolean;
+      fps?: number;
     }
   | { kind: "wait"; duration: Ms }
-  | { kind: "loop"; ms?: Ms; times?: number; fn: (ctx: LoopContext) => void }
+  | {
+      kind: "loop";
+      ms?: Ms;
+      times?: number;
+      fps?: number;
+      fn: (ctx: LoopContext) => void;
+    }
   | { kind: "par"; children: SimNode[][] }
   | {
       kind: "spawn";
       scene: Scene<unknown>;
-      options: { key: string; at?: Ms; duration?: Ms; forever?: boolean };
+      options: {
+        key: string;
+        at?: Ms;
+        duration?: Ms;
+        forever?: boolean;
+        fps?: number;
+      };
       anchor: Ms;
     }
   | { kind: "transition"; next: Scene<unknown>; anchor: Ms }
@@ -67,6 +80,8 @@ export interface CompiledUnit {
   windowStart: Ms;
   windowEnd: Ms;
   hold: boolean;
+  /** 本单元有效采样密度（单元声明 > 继承；编译期解析完毕，运行期不再回溯） */
+  fps: number;
   /** 回调入参：step 收 StepContext、loop 迭代收 LoopContext（由 runtime 组装） */
   call: (ctx: unknown) => FrameState | void;
   /** loop 迭代元数据（step 无） */
@@ -84,6 +99,8 @@ export interface CompiledSpawn {
   startGlobal: Ms;
   chainDuration: Ms;
   forever: boolean;
+  /** 链级基础帧率（链内单元未声明 fps 时继承；undefined = 引擎基础帧率） */
+  chainFps?: number;
 }
 
 export interface CompiledAudio {
