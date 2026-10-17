@@ -6,17 +6,13 @@ import type {
   Ms,
 } from "@lingfan-video/contracts";
 import { StateAggregator } from "../../domain/simulation";
-import type {
-  CompiledUnit,
-  SceneInternal,
-} from "../../domain/simulation/types";
+import type { CompiledUnit, SceneEntry } from "../../domain/simulation/types";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { buildTimeline } from "./timeline-build";
 import type {
   ChainSpan,
   EvalDeps,
-  RunHooks,
   RunSummary,
   TimelineState,
 } from "./engine-types";
@@ -27,10 +23,13 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     opts,
     deadUnits: new Set<string>(),
     spawnChains: [],
-    audioEvents: [],
+    audioVoices: [],
+    voiceSeq: 0,
     form3: new Map(),
     spans: [],
     timelineEnd: 0,
+    nowMs: 0,
+    inCallback: false,
   };
 }
 
@@ -130,14 +129,16 @@ export class TimelineEngine {
 
   /** 正片渲染：沿采样网格逐点求值并交帧；运行期 spawn 新增链 → 重建剩余网格（动态流式采样） */
   async run(
-    head: SceneInternal<unknown>,
+    head: SceneEntry,
     sink: FrameSink,
     onProgress?: (done: number, total: number) => void,
-    hooks?: RunHooks,
   ): Promise<RunSummary> {
     this.buildTimeline(head);
-    // 时间线建好即可预排音频（预览端实时播放；导出端走组合根离线混音）
-    hooks?.onAudioScript?.(this.state.audioEvents, this.state.timelineEnd);
+    // 预览端：时间线建好即锚定起点并预排登记期声音；运行期发射由 ctx.audio 即时发声
+    await this.state.opts.audioOut?.begin({
+      durationMs: this.state.timelineEnd,
+      voices: this.state.audioVoices,
+    });
     let grid = buildSampleGrid(this.state);
     let idx = 0;
     let chainCount = this.state.spawnChains.length;
@@ -166,16 +167,12 @@ export class TimelineEngine {
       frames: written,
       durationMs: this.state.timelineEnd,
       lastState: this.aggregator.full(),
-      audioEvents: this.state.audioEvents,
+      audioVoices: this.state.audioVoices,
     };
   }
 
   /** computeRange：采样网格 ∩ [from,to) 逐点采样完整状态表（同一次登记复用；动态链同样重采样） */
-  async collect(
-    head: SceneInternal<unknown>,
-    from: Ms,
-    to: Ms,
-  ): Promise<FrameState[]> {
+  async collect(head: SceneEntry, from: Ms, to: Ms): Promise<FrameState[]> {
     this.buildTimeline(head);
     let grid = buildSampleGrid(this.state).filter(
       (t) => t >= from && t < to && t < this.state.timelineEnd,
@@ -201,10 +198,7 @@ export class TimelineEngine {
   }
 
   /** computeAt：≤t 的最近采样点的完整状态表；越时间线尾 → undefined */
-  async stateAt(
-    head: SceneInternal<unknown>,
-    t: Ms,
-  ): Promise<FrameState | undefined> {
+  async stateAt(head: SceneEntry, t: Ms): Promise<FrameState | undefined> {
     this.buildTimeline(head);
     if (t >= this.state.timelineEnd) return undefined;
     const grid = buildSampleGrid(this.state);
@@ -224,7 +218,7 @@ export class TimelineEngine {
     return this.aggregator.full();
   }
 
-  private buildTimeline(head: SceneInternal<unknown>): void {
+  private buildTimeline(head: SceneEntry): void {
     buildTimeline(this.deps().state, head);
   }
 

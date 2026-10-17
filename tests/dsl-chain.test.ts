@@ -3,7 +3,7 @@
  * 运行期语义（prev 传递/stop/kill）在 engine-timeline.test.ts。
  */
 import { describe, expect, it } from "vitest";
-import { start, createScene } from "@lingfan-video/core";
+import { start, createScene, clip, gain } from "@lingfan-video/core";
 import type { Handle } from "@lingfan-video/contracts";
 
 describe("start 三重载", () => {
@@ -51,11 +51,11 @@ describe("登记期语义（SceneEnv 捕获）", () => {
   it("spawn 返回占位死 Handle（alive=false；真 Handle 在运行期 ctx.spawn）", () => {
     const bg = createScene(100, () => {});
     let h: Handle | undefined;
-    createScene(200, (env) => {
+    createScene(200, (_prev, env) => {
       h = env.spawn(bg, { key: "bg" });
     });
     // body 未跑（登记仅在 engine/validate 干跑时执行）→ 这里用干跑触发：
-    const holder = createScene(200, (env) => {
+    const holder = createScene(200, (_prev, env) => {
       const dead = env.spawn(bg, { key: "bg" });
       expect(dead.alive).toBe(false);
       expect(typeof dead.kill).toBe("function");
@@ -67,9 +67,9 @@ describe("登记期语义（SceneEnv 捕获）", () => {
 
   it("audio / bgm 登记不抛、不推进 cursor（不占帧窗池）", () => {
     expect(() => {
-      createScene(1000, (env) => {
-        env.audio("sfx.mp3", { at: 100, volume: 0.5 });
-        env.bgm("bgm.mp3");
+      createScene(1000, (_prev, env) => {
+        env.audio(clip("sfx.mp3"), { at: 100, gain: gain(0.5) });
+        env.bgm(clip("bgm.mp3"));
         env.step(500, () => {});
       });
     }).not.toThrow();
@@ -77,7 +77,7 @@ describe("登记期语义（SceneEnv 捕获）", () => {
 
   it("loop 对象参数与 par 分支 env（显式接分支）", () => {
     expect(() => {
-      createScene(1000, (env) => {
+      createScene(1000, (_prev, env) => {
         env.loop({
           ms: 100,
           times: 3,
@@ -100,7 +100,7 @@ describe("登记期语义（SceneEnv 捕获）", () => {
   it("transitionTo 登记：其后节点在运行期被短路（编译 break），登记本身不抛", () => {
     const next = createScene(100, () => {});
     expect(() => {
-      createScene(300, (env) => {
+      createScene(300, (_prev, env) => {
         env.transitionTo(next);
         env.step(100, () => {}); // 运行期不会活跃（transition 收窗）
       });
@@ -180,7 +180,9 @@ describe("setup 执行（StartSpec.setup）", () => {
     // 路径 A：裸引擎未装配 assets
     const sA = start({
       window: 500,
-      setup: (env) => env.assets.load("img.png"),
+      setup: (env) => {
+        void env.assets.load("img.png");
+      },
       run: () => {},
     });
     const engine = new TimelineEngine({
@@ -202,7 +204,9 @@ describe("setup 执行（StartSpec.setup）", () => {
     // 路径 B：组合根默认注入 fail-fast 实现
     const sB = start({
       window: 500,
-      setup: (env) => env.assets.load("img.png"),
+      setup: (env) => {
+        void env.assets.load("img.png");
+      },
       run: () => {},
     });
     await expect(

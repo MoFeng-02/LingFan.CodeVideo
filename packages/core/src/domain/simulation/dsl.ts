@@ -1,5 +1,5 @@
 import type {
-  AudioClipRef,
+  AudioClip,
   AudioOptions,
   LoopSpec,
   Ms,
@@ -9,11 +9,16 @@ import type {
   StepFn,
   StepOptions,
 } from "@lingfan-video/contracts";
+import { loop as loopUntil } from "../audio";
 import type { SceneInternal, SimNode } from "./types";
 
 let sceneSeq = 0;
 
-/** Scene 的工厂：闭包注入 cutTo 双重载（Ms 糖 / 秒糖），返回不可变链节点 */
+/**
+ * Scene 的工厂：闭包注入 cutTo 双重载（Ms 糖 / 秒糖），返回不可变链节点。
+ * 两种 body 形状都收：不读上一幕就只接 env（spawn/cutTo 目标的常见写法），
+ * 需要上一幕状态时显式写 (prev, env)。
+ */
 export function createScene<P>(
   duration: Ms,
   body: (prev: P, env: SceneEnv) => unknown,
@@ -36,7 +41,7 @@ export function createScene<P>(
       throw new Error(
         `spec_violation: ${id} 重复链接（cutTo/transitionTo 只能一个出口）`,
       );
-    const child = createScene<unknown>(windowMs, childBody);
+    const child = createScene(windowMs, childBody);
     scene.next = child;
     return child as unknown as Scene<unknown>;
   }) as unknown;
@@ -139,18 +144,19 @@ export class Recorder implements SceneEnv {
     this.nodes.push({ kind: "transition", next, anchor: this.cursor });
   }
 
-  audio(clip: AudioClipRef, options?: AudioOptions): void {
+  audio(clip: AudioClip, options?: AudioOptions): void {
+    // 登记期是「声明」：起点 = 当前登记位置 + at；运行期操作面在 ctx.audio
     this.nodes.push({
       kind: "audio",
-      clipUrl: clip.url,
+      clip,
       options: options ?? {},
       anchor: this.cursor,
     });
   }
 
-  bgm(clip: AudioClipRef, options?: Omit<AudioOptions, "at">): void {
-    // bgm 糖：缺省循环播放（显式 loop:false 仍可覆盖）
-    this.audio(clip, { ...options, loop: options?.loop ?? true });
+  bgm(clip: AudioClip, options?: Omit<AudioOptions, "loop">): void {
+    // bgm 糖：循环到时间线尾（要定制循环区间请用 audio + loop(untilMs)）
+    this.audio(clip, { ...options, loop: loopUntil() });
   }
 }
 

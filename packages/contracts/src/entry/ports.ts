@@ -3,7 +3,7 @@ import type { Scene } from "../scene";
 import type { ExportResult, Exporter } from "../export";
 import type { FrameState, ValidationError } from "../feedback";
 import type { AssetSource } from "../asset";
-import type { AudioClock, AudioTimelineEvent } from "../audio";
+import type { AudioClock, AudioOutput } from "../audio";
 
 /** 渲染后端 */
 export type Backend = "webgpu" | "webgl" | "2d";
@@ -22,10 +22,10 @@ export interface RenderOptions {
   exporter?: Exporter;
   /** 资产来源（setup 阶段 assets.load 后端；缺省 = fail-fast） */
   assets?: AssetSource;
-  /** 音频时钟（注入 = 音频启用：导出端离线混音 writeAudio；缺省 = 纯视频） */
+  /** 音频时钟（注入 = 导出端音频启用：程序 → 样本 → writeAudio；缺省 = 纯视频） */
   audio?: AudioClock;
-  /** 时间线构建完成即刻回调：预览端据此预排音频（导出端不用，走 audio 混音） */
-  onAudioScript?(events: AudioTimelineEvent[], durationMs: Ms): void;
+  /** 音频输出（注入 = 预览端实时发声：登记期预排 + 运行期发射即时发声） */
+  audioOutput?: AudioOutput;
   headless?: boolean;
   onProgress?(doneFrames: number, totalFrames: number): void;
 }

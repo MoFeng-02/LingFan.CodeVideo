@@ -1,7 +1,14 @@
 import type { Ms } from "../shared/units";
 import type { Handle, Scheduler } from "../scheduler";
 import type { FrameState } from "../feedback";
+import type { AudioClip, AudioHandle, AudioOptions } from "../audio";
 import type { CanvasEnv, Scene } from "./entities";
+
+/** 运行期音频能力：与 step/loop/spawn 同为上下文方法（能力即上下文，无全局单例） */
+export interface AudioEnv {
+  /** 立刻发声并返回句柄；寿命 = 源播完 / stop() / 总时间线尾 */
+  audio(clip: AudioClip, options?: AudioOptions): AudioHandle;
+}
 
 /** step 回调：返回 FrameState 即发布状态（经 key 化聚合合并），返回 void 无状态发布 */
 export type StepFn = (ctx: StepContext) => FrameState | void;
@@ -15,7 +22,7 @@ export interface StepOptions {
   fps?: number;
 }
 
-export interface StepContext extends CanvasEnv {
+export interface StepContext extends CanvasEnv, AudioEnv {
   t: Ms;
   frameIndex: number;
   totalTime: Ms;
@@ -49,7 +56,7 @@ export interface LoopSpec {
   fps?: number;
 }
 
-export interface LoopContext extends CanvasEnv {
+export interface LoopContext extends CanvasEnv, AudioEnv {
   parentT: Ms;
   frameIndex: number;
   /** 本单元有效帧率（单元声明 > spawn 链 > 基础） */

@@ -22,11 +22,7 @@ import { TimelineEngine, type EngineOptions } from "./app/runtime";
 
 export { makeRenderError } from "./app/runtime/error";
 export { TimelineEngine } from "./app/runtime/engine";
-export type {
-  EngineOptions,
-  RunHooks,
-  RunSummary,
-} from "./app/runtime/engine-types";
+export type { EngineOptions, RunSummary } from "./app/runtime/engine-types";
 export { validate } from "./domain/validation";
 export {
   timestampAt,
@@ -35,6 +31,8 @@ export {
   frameCount,
 } from "./domain/time-math/time-math";
 export { poolOf, loopPool } from "./domain/simulation/types";
+/** 音频组合子：能力即上下文的「写法糖」（构造期强类型校验） */
+export { clip, gain, pan, loop, rate, warp } from "./domain/audio";
 export type { SceneInternal, SimNode } from "./domain/simulation/types";
 
 /** 预览/导出通用装配：建引擎 + 装 CPU 位图来源（GPU painter 由独立适配器承载） */
@@ -54,6 +52,7 @@ function assemble(opts: RenderOptions): {
     canvas,
     headless: opts.headless ?? false,
     assets: opts.assets ?? makeDefaultAssets(),
+    audioOut: opts.audioOutput,
   });
   // 位图来源：每帧新建（确定性不依赖对象复用；ImageBitmap 路径归 GPU 适配器）。
   // 全部为零 = 占位：预览画面由 step 回调直接画在 canvas 上，此位图只占协议位；
@@ -79,22 +78,19 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
     throw makeMissingExporter();
   }
   const sink = exporterAdapter(exporter);
-  // 预览端（paced sink）与导出共用同一 run；音频脚本钩子在建时间线后即刻回调
+  // 预览端（paced sink）与导出共用同一 run；预览声音经 audioOut 边跑边发
   const summary = await engine.run(
     scene as SceneInternal<unknown>,
     sink,
     options.onProgress,
-    {
-      onAudioScript: options.onAudioScript,
-    },
   );
-  // 音频：事件表 → AudioClock 混音 → exporter.writeAudio（缺省 = 纯视频导出）
-  if (options.audio && summary.audioEvents.length > 0 && exporter.writeAudio) {
+  // 音频：程序（登记期 + 运行期声音）→ AudioClock 混音 → exporter.writeAudio（缺省 = 纯视频导出）
+  if (options.audio && summary.audioVoices.length > 0 && exporter.writeAudio) {
     const clock = options.audio;
-    const samples = await clock.renderTimeline(
-      summary.durationMs,
-      summary.audioEvents,
-    );
+    const samples = await clock.renderProgram({
+      durationMs: summary.durationMs,
+      voices: summary.audioVoices,
+    });
     // 块序列自 0 起连续：按序拼接即整轨，布局取自时钟声明（不猜采样率/声道数）
     for (const s of samples)
       await exporter.writeAudio(s.data, clock.sampleRate, clock.channels);

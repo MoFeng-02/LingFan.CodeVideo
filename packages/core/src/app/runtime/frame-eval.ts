@@ -1,4 +1,7 @@
 import type {
+  AudioClip,
+  AudioHandle,
+  AudioOptions,
   FrameIndex,
   LoopContext,
   Ms,
@@ -9,6 +12,7 @@ import type {
   CompiledUnit,
   SceneInternal,
 } from "../../domain/simulation/types";
+import { emitAudio } from "./audio-runtime";
 import { makeRenderError } from "./error";
 import type { ChainSpan, EvalDeps, SpawnChain } from "./engine-types";
 import { findSpan, findSpanLooping } from "./timeline-build";
@@ -26,7 +30,8 @@ function wrapThrow(e: unknown, sceneId: string, t: Ms, what: string): never {
 
 /** 逐帧求值：绘制顺序 spawn 链（背景）在前、登记链在后 */
 export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
-  const { state, aggregator } = deps;
+  const { state } = deps;
+  state.nowMs = t; // 句柄操作/声音 alive 的时间轴依据 = 当前求值时刻
   const ordered: Array<{ chain: SpawnChain | null; span: ChainSpan }> = [];
   for (const c of state.spawnChains) {
     if (c.killed || t < c.start || t >= c.end) continue;
@@ -50,7 +55,7 @@ export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
         continue;
       if (localT < unit.windowStart || localT >= unit.windowEnd) {
         if (unit.hold && localT >= unit.windowEnd)
-          aggregator.touchHold(`${span.scene.id}/${unit.key}`); // hold 冻结糖
+          deps.aggregator.touchHold(`${span.scene.id}/${unit.key}`); // hold 冻结糖
         continue;
       }
       if (unit.loop && unit.loop.iterationMs === undefined)
@@ -60,6 +65,41 @@ export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
       else evalStep(deps, span, unit, f, t, localT - unit.windowStart, chain);
     }
   }
+}
+
+/**
+ * 执行回调（同时也是音频句柄操作的合法窗口）：
+ * 返回值是 FrameState 则发布（经 key 化聚合），否则无状态发布。
+ */
+function invoke(
+  deps: EvalDeps,
+  span: ChainSpan,
+  unit: CompiledUnit,
+  ctx: unknown,
+  t: Ms,
+): void {
+  const { state, aggregator } = deps;
+  state.inCallback = true;
+  try {
+    const published = (unit.call as (c: unknown) => unknown)(ctx);
+    if (published && typeof published === "object")
+      aggregator.publish(
+        `${span.scene.id}/${unit.key}`,
+        published as Record<string, unknown>,
+      );
+  } catch (e) {
+    wrapThrow(e, span.scene.id, t, `step（${unit.key}）`);
+  } finally {
+    state.inCallback = false;
+  }
+}
+
+/** 运行期音频能力（能力即上下文：与 spawn/scheduler 同一注入面） */
+function audioOf(
+  deps: EvalDeps,
+  t: Ms,
+): (clip: AudioClip, options?: AudioOptions) => AudioHandle {
+  return (clip, options) => emitAudio(deps, clip, options, t);
 }
 
 /** step 单元：StepContext + FrameState 发布 */
@@ -93,14 +133,9 @@ function evalStep(
     spawn: (scene, options) =>
       dynamicSpawn(deps, scene as SceneInternal<unknown>, options, t, chain),
     scheduler: schedulerFacade(deps.state, t),
+    audio: audioOf(deps, t),
   };
-  try {
-    const state = unit.call(ctx);
-    if (state && typeof state === "object")
-      deps.aggregator.publish(`${span.scene.id}/${unit.key}`, state);
-  } catch (e) {
-    wrapThrow(e, span.scene.id, t, `step（${unit.key}）`);
-  }
+  invoke(deps, span, unit, ctx, t);
 }
 
 /** loop 预展开迭代单元：LoopContext（iteration/iterationT/iterationProgress） */
@@ -134,14 +169,9 @@ function evalLoopIter(
     spawn: (scene, options) =>
       dynamicSpawn(deps, scene as SceneInternal<unknown>, options, t, chain),
     scheduler: schedulerFacade(deps.state, t),
+    audio: audioOf(deps, t),
   };
-  try {
-    const state = unit.call(ctx);
-    if (state && typeof state === "object")
-      deps.aggregator.publish(`${span.scene.id}/${unit.key}`, state);
-  } catch (e) {
-    wrapThrow(e, span.scene.id, t, `loop（${unit.key}）`);
-  }
+  invoke(deps, span, unit, ctx, t);
 }
 
 /** loop 无固定迭代窗（自管节奏）：逐帧活跃，ctx.next() 推进 iteration、stop() 终止 */
@@ -182,12 +212,7 @@ function evalForm3(
     spawn: (scene, options) =>
       dynamicSpawn(deps, scene as SceneInternal<unknown>, options, t, chain),
     scheduler: schedulerFacade(deps.state, t),
+    audio: audioOf(deps, t),
   };
-  try {
-    const state = unit.call(ctx);
-    if (state && typeof state === "object")
-      deps.aggregator.publish(`${span.scene.id}/${unit.key}`, state);
-  } catch (e) {
-    wrapThrow(e, span.scene.id, t, `loop（${unit.key}）`);
-  }
+  invoke(deps, span, unit, ctx, t);
 }

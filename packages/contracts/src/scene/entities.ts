@@ -1,6 +1,6 @@
 import type { Ms } from "../shared/units";
 import type { Handle, SpawnOptions } from "../scheduler";
-import type { AudioClipRef, AudioOptions } from "../audio";
+import type { AudioClip, AudioOptions } from "../audio";
 import type { LoopSpec, StepFn, StepOptions } from "./nodes";
 
 /** 帧号换算糖：f(n) = n × (1000 / 单元有效帧率)——单元内语义，跨单元不可比 */
@@ -34,9 +34,13 @@ export interface SceneEnv extends CanvasEnv {
   spawn<S>(scene: Scene<S>, options: SpawnOptions): Handle;
   wait(duration: Ms): void;
   transitionTo(next: Scene<unknown>): void;
-  /** 音频：不消耗帧窗池、不改 step 模型 */
-  audio(clip: AudioClipRef, options?: AudioOptions): void;
-  bgm(clip: AudioClipRef, options?: Omit<AudioOptions, "at">): void;
+  /**
+   * 登记期音频声明：起点 = 登记位置 + at；不消耗帧窗池、不改 step 模型。
+   * 运行期发声与操作走 StepContext/LoopContext.audio（拿 AudioHandle）。
+   */
+  audio(clip: AudioClip, options?: AudioOptions): void;
+  /** bgm 糖：缺省循环到时间线尾（显式 loop 可覆盖） */
+  bgm(clip: AudioClip, options?: Omit<AudioOptions, "loop">): void;
 }
 
 /** setup 阶段环境：资产解码同位进 setup；run 阶段拿不到 assets */
@@ -79,6 +83,7 @@ export interface StartFn {
 /** spec 形式：setup 只跑一次（资产/解码），run 为登记体 */
 export interface StartSpec<P> {
   window: Ms;
-  setup?: (env: SetupEnv) => Promise<void> | void;
+  /** setup 必须同步：资产解码在 render 前完成（返回 Promise 会被引擎拒绝） */
+  setup?: (env: SetupEnv) => void;
   run: (env: SceneEnv) => P | void;
 }

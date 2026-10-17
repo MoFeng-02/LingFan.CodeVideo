@@ -164,64 +164,98 @@ function checkNodes(
       case "transition":
         return; // 提前收窗：其后节点不活跃，不再检查
       case "audio":
-        checkAudioWarp(path, n, errors);
+        checkAudio(path, n, errors);
         break;
     }
   }
 }
 
 /**
- * 音频时间映射检查：锚点时间严格递增、源位置单调（速率必为正，禁倒放）、
- * 源尾标志 "end" 仅允许末位（否则其后的锚点无意义）。
+ * 音频声明检查（组合子之外的兜底：结构对象可被字面量直接构造，不能只靠构造期校验）。
+ * 检查项：at ≥0、gain.value ≥0、fade ≥0、pan ∈ [-1,1]、loop.untilMs ≥0、
+ * rate 为正、warp 锚点时间严格递增且源位置单调（速率必为正，禁倒放）、"end" 仅末位。
  */
-function checkAudioWarp(
+function checkAudio(
   path: string,
   n: Extract<SimNode, { kind: "audio" }>,
   errors: ValidationError[],
 ): void {
-  const warp = n.options.warp;
-  if (warp === undefined) return;
-  const tag = `audio "${n.clipUrl}" warp`;
+  const o = n.options;
+  const tag = `audio "${n.clip.url}"`;
   const push = (message: string): void => {
     errors.push({ path, code: "spec_violation", message });
   };
-  if (warp.length === 0) {
-    push(`${tag} 为空数组（省略即原速；空数组无意义）`);
+  if (o.at !== undefined && !msOk(o.at))
+    push(`${tag} at=${o.at} 须为 ≥0 的有限毫秒`);
+  const g = o.gain;
+  if (g) {
+    if (!Number.isFinite(g.value) || g.value < 0)
+      push(`${tag} gain=${g.value} 须为 ≥0 的有限数`);
+    if (g.fadeIn !== undefined && !msOk(g.fadeIn))
+      push(`${tag} fadeIn=${g.fadeIn} 须为 ≥0 的有限毫秒`);
+    if (g.fadeOut !== undefined && !msOk(g.fadeOut))
+      push(`${tag} fadeOut=${g.fadeOut} 须为 ≥0 的有限毫秒`);
+  }
+  const p = o.pan;
+  if (p && (!Number.isFinite(p.value) || p.value < -1 || p.value > 1))
+    push(`${tag} pan=${p.value} 须在 -1 ~ 1 之间`);
+  const lp = o.loop;
+  if (lp && lp.untilMs !== undefined && !msOk(lp.untilMs))
+    push(`${tag} loop.untilMs=${lp.untilMs} 须为 ≥0 的有限毫秒`);
+  const r = o.rate;
+  if (r?.kind === "rate" && (!Number.isFinite(r.value) || r.value <= 0))
+    push(`${tag} rate=${r.value} 须为 > 0 的有限数（禁倒放、静止）`);
+  if (r?.kind === "warp") checkWarp(tag, r.points, push);
+}
+
+/** warp 锚点表检查：时间严格递增、源位置单调（速率为正）、"end" 仅末位 */
+function checkWarp(
+  tag: string,
+  points: readonly { atMs: Ms; srcMs: Ms | "end" }[],
+  push: (message: string) => void,
+): void {
+  if (points.length === 0) {
+    push(`${tag} warp 为空锚点表（省略即原速；空表无意义）`);
     return;
   }
   let prevAt = -Infinity;
   let prevSrc = -Infinity;
-  for (let i = 0; i < warp.length; i++) {
-    const p = warp[i]!;
-    if (!Number.isFinite(p.atMs) || p.atMs < 0) {
-      push(`${tag} 第 ${i} 点 atMs=${p.atMs} 非法（须为 ≥0 的有限毫秒）`);
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    if (!msOk(p.atMs)) {
+      push(`${tag} warp 第 ${i} 点 atMs=${p.atMs} 非法（须为 ≥0 的有限毫秒）`);
       continue;
     }
-    if (p.atMs <= prevAt) {
-      push(`${tag} 第 ${i} 点 atMs=${p.atMs} 未严格递增（前一点 ${prevAt}）`);
-    }
+    if (p.atMs <= prevAt)
+      push(
+        `${tag} warp 第 ${i} 点 atMs=${p.atMs} 未严格递增（前一点 ${prevAt}）`,
+      );
     prevAt = p.atMs;
     if (p.srcMs === "end") {
-      if (i !== warp.length - 1) {
-        push(`${tag} 第 ${i} 点 srcMs="end" 只允许末位（源尾之后无锚点可言）`);
-      }
+      if (i !== points.length - 1)
+        push(
+          `${tag} warp 第 ${i} 点 srcMs="end" 只允许末位（源尾之后无锚点可言）`,
+        );
       continue;
     }
-    if (!Number.isFinite(p.srcMs) || p.srcMs < 0) {
+    if (!msOk(p.srcMs)) {
       push(
-        `${tag} 第 ${i} 点 srcMs=${String(p.srcMs)} 非法（须为 ≥0 的有限毫秒或 "end"）`,
+        `${tag} warp 第 ${i} 点 srcMs=${String(p.srcMs)} 非法（须为 ≥0 的有限毫秒或 "end"）`,
       );
       continue;
     }
-    if (p.srcMs <= prevSrc) {
+    if (p.srcMs <= prevSrc)
       push(
-        `${tag} 第 ${i} 点 srcMs=${p.srcMs} 未递增（前一点 ${prevSrc}）——速率须为正，禁倒放`,
+        `${tag} warp 第 ${i} 点 srcMs=${p.srcMs} 未递增（前一点 ${prevSrc}）——速率须为正，禁倒放`,
       );
-    }
     prevSrc = p.srcMs;
   }
 }
 
+/** 毫秒合法性：有限且非负 */
+function msOk(v: unknown): v is Ms {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0;
+}
 /** 分支展平后的终点 cursor（不含 par 嵌套误差——渲染期 evaluator 为精确账本） */
 function branchCursorEnd(branch: SimNode[], base: Ms): Ms {
   let c: Ms = base;

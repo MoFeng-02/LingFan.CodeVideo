@@ -132,17 +132,11 @@ export function compileSegment(
           break;
         }
         case "audio": {
-          const o = n.options;
+          // 段内绝对锚点 = 登记位置 + at；全局化与循环圈展开由 runtime 承担
           audio.push({
-            clipUrl: n.clipUrl,
-            atMs: local + (o.at ?? 0),
-            volume: o.volume ?? 1,
-            fadeIn: o.fadeIn,
-            fadeOut: o.fadeOut,
-            loop: o.loop ?? false,
-            channels: o.channels,
-            pan: o.pan ?? 0,
-            warp: o.warp,
+            clip: n.clip,
+            atMs: local + (n.options.at ?? 0),
+            options: n.options,
           });
           break;
         }

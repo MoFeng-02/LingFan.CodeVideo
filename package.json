@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
     "test:unit": "vitest run",
     "build": "pnpm -r build",
     "format": "prettier --write \"packages/**/src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\"",

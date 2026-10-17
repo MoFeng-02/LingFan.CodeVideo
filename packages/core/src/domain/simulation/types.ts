@@ -1,4 +1,5 @@
 import type {
+  AudioClip,
   AudioOptions,
   FrameState,
   LoopContext,
@@ -7,7 +8,6 @@ import type {
   SceneEnv,
   SetupEnv,
   StepFn,
-  WarpPoint,
 } from "@lingfan-video/contracts";
 
 /** 登记期节点树（SceneEnv 回调捕获的中间表示） */
@@ -45,7 +45,7 @@ export type SimNode =
   | { kind: "transition"; next: Scene<unknown>; anchor: Ms }
   | {
       kind: "audio";
-      clipUrl: string;
+      clip: AudioClip;
       options: AudioOptions;
       anchor: Ms;
     };
@@ -70,6 +70,17 @@ export interface SceneInternal<P = unknown> {
   nextIsTransition?: boolean;
 }
 
+/**
+ * 链起点场景的结构面：prev 的类型由调用方剧本决定（void/P/unknown 都行），
+ * 引擎从链头开始跑、不消费入参，因此只要求「引擎真正会读的字段」。
+ */
+export interface SceneEntry {
+  readonly id: string;
+  readonly duration: Ms;
+  readonly setup?: (env: SetupEnv) => Promise<void> | void;
+  next?: SceneInternal<unknown>;
+  nextIsTransition?: boolean;
+}
 /** 编译产物：窗口内绝对化的一帧活动单元（step 或一次 loop 迭代） */
 export interface CompiledUnit {
   key: string;
@@ -99,19 +110,12 @@ export interface CompiledSpawn {
   chainFps?: number;
 }
 
+/** 编译产物的音频声明（段内相对锚点；全局化与运行期发射由 runtime 承担） */
 export interface CompiledAudio {
-  clipUrl: string;
+  readonly clip: AudioClip;
+  /** 段内偏移：登记位置 + options.at */
   atMs: Ms;
-  volume: number;
-  fadeIn?: Ms;
-  fadeOut?: Ms;
-  loop: boolean;
-  /** 目标声道数（undefined = 跟随源声道布局） */
-  channels?: number;
-  /** 立体声摆位 -1~1（缺省 0 居中） */
-  pan: number;
-  /** 时间映射锚点（atMs 相对事件起点；undefined = 原速） */
-  warp?: readonly WarpPoint[];
+  readonly options: AudioOptions;
 }
 
 /** 单段编译结果（衔接下一片段由 runtime 链式推进） */

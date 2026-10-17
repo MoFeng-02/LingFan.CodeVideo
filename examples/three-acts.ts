@@ -8,11 +8,11 @@
  */
 import { start } from "@lingfan-video/core";
 import { FrameSequenceExporter } from "@lingfan-video/infra";
-import type { SceneEnv } from "@lingfan-video/contracts";
+import type { StepContext } from "@lingfan-video/contracts";
 
-function drawTitle(env: SceneEnv, text: string) {
+function drawTitle(ctx: StepContext, text: string) {
   // painter 当前为 CPU 占位（全 0 位图）：绘制回调在此只演示 ctx 形状
-  void env;
+  void ctx;
   return { title: text };
 }
 

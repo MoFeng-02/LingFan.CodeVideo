@@ -12,8 +12,14 @@ export type {
   DecodedPcm,
   OfflineAudioMixerOptions,
 } from "./audio/offline-mixer";
-export { WebAudioPlayer } from "./audio/web-audio-player";
+export { WebAudioOutput } from "./audio/web-audio-player";
 export type { AudioBufferLoader } from "./audio/web-audio-player";
+export {
+  isAudible,
+  evaluateVoice,
+  type GainPoint,
+  type VoiceTimeline,
+} from "./audio/voice-timeline";
 export {
   rateSegments,
   resolveWarp,

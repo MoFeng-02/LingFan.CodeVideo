@@ -4,8 +4,10 @@ import { Recorder } from "../../domain/simulation/dsl";
 import type {
   CompiledAudio,
   CompiledSegment,
+  SceneEntry,
   SceneInternal,
 } from "../../domain/simulation/types";
+import { pushVoice } from "./audio-runtime";
 import { makeRenderError } from "./error";
 import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
 
@@ -13,50 +15,59 @@ import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
 export function resetTimeline(state: TimelineState): void {
   state.spans = [];
   state.spawnChains.length = 0;
-  state.audioEvents.length = 0;
+  state.audioVoices.length = 0;
+  state.voiceSeq = 0;
   state.deadUnits.clear();
   state.form3.clear();
   state.timelineEnd = 0;
+  state.nowMs = 0;
+  state.inCallback = false;
 }
 
 /** 主链时间线构建：成环检测、prev 链式传参、transition 优先、spawn 链展开 */
-export function buildTimeline(
-  state: TimelineState,
-  head: SceneInternal<unknown>,
-): void {
+export function buildTimeline(state: TimelineState, head: SceneEntry): void {
   resetTimeline(state);
   let start: Ms = 0;
-  let cur: SceneInternal<unknown> | undefined = head;
+  let cur: SceneEntry | undefined = head;
   let prev: unknown; // body(prev) 链式传参
   const seen = new Set<string>();
   while (cur) {
     if (seen.has(cur.id))
       throw makeRenderError("spec_violation", cur.id, start, "剧本链成环");
     seen.add(cur.id);
-    const seg = compileScene(state, cur, prev);
+    // 结构入口 → 编译面：引擎只在链上推进，prev 的具体类型不参与
+    const scene = cur as SceneInternal<unknown>;
+    const seg = compileScene(state, scene, prev);
     prev = seg.bodyResult;
     const end = start + (seg.activeEnd ?? seg.duration);
-    state.spans.push({ scene: cur, seg, start, end });
+    state.spans.push({ scene, seg, start, end });
     expandSpawns(state, seg, start, 0);
     start = end;
     cur = seg.transitionNext
       ? (seg.transitionNext as SceneInternal<unknown>)
       : cur.next;
   }
-  state.timelineEnd = start;
-  // forever spawn 寿命 = 总链尾：链收集完后再夹取
+  // 终界 = 内容上界：主链池尾与有界 spawn 链内容末点的较大者
+  // （链可以在主链池尾之后仍有内容，此时视频/音频都必须跑到那里，不能只按主链裁剪）
+  let end = start;
   for (const c of state.spawnChains)
-    if (c.end === Infinity) c.end = state.timelineEnd;
-  collectAudioEvents(state);
+    if (c.end !== Infinity) end = Math.max(end, c.end);
+  state.timelineEnd = end;
+  // forever spawn 寿命 = 总链尾：终界确定后再夹取
+  for (const c of state.spawnChains) if (c.end === Infinity) c.end = end;
+  materializeAudio(state);
 }
 
-/** 全时间线音频事件收集：span 相对锚点 → 全局绝对；forever 链按循环圈数展开 */
-function collectAudioEvents(state: TimelineState): void {
+/**
+ * 声音全局化：登记期声明（段内锚点）→ 全局时间线声音；forever 链按循环圈数平移展开。
+ * 锚点已落到段窗外（transition 提前收窗等）的声明不发声——声明位置就是语义。
+ */
+function materializeAudio(state: TimelineState): void {
   const push = (seg: CompiledSegment, spanStart: Ms, spanEnd: Ms): void => {
     for (const a of seg.audio) {
       const at = spanStart + a.atMs;
-      if (at >= spanEnd) continue; // 锚点已收窗外（transition 短路等）不响
-      state.audioEvents.push({ ...a, globalAtMs: at });
+      if (at >= spanEnd) continue;
+      pushVoice(state, a.clip, at, a.options);
     }
   };
   const walkSpans = (spans: ChainSpan[]): void => {
@@ -68,7 +79,7 @@ function collectAudioEvents(state: TimelineState): void {
     const last = c.spans[c.spans.length - 1];
     const contentLen = last ? last.end - c.start : 0;
     if (contentLen > 0 && c.end - c.start > contentLen) {
-      // forever 循环重放：音频事件按圈数平移展开（与画面回卷同相位）
+      // forever 循环重放：声音按圈数平移展开（与画面回卷同相位）
       const loops = Math.ceil((c.end - c.start) / contentLen);
       for (let k = 1; k < loops; k++)
         for (const span of c.spans) {
@@ -79,7 +90,6 @@ function collectAudioEvents(state: TimelineState): void {
   }
   walkSpans(state.spans);
 }
-
 /** 编译单段：先跑 setup（资产/解码只跑一次）再跑 body 捕获节点流（每次出现都跑——prev 依出现上下文，不能按 id 缓存） */
 export function compileScene(
   state: TimelineState,
@@ -157,6 +167,15 @@ export function expandSpawns(
   }
 }
 
+/** 段的内容末点：单元窗口上界（无单元时才按声明池长）——声明池是上限不是内容 */
+function contentEndOf(seg: CompiledSegment): Ms {
+  const declared = seg.activeEnd ?? seg.duration;
+  if (seg.units.length === 0) return declared;
+  let end = 0;
+  for (const u of seg.units) if (u.windowEnd > end) end = u.windowEnd;
+  return Math.min(declared, end);
+}
+
 /** 构造一条链并登记（同 key 活跃链已存在 → 返回 undefined，续接语义）；forever 端点先记 Infinity */
 export function buildChain(
   state: TimelineState,
@@ -191,8 +210,8 @@ export function buildChain(
     seen.add(sc.id);
     const seg = compileScene(state, sc, prev, chainFps);
     prev = seg.bodyResult;
-    // 链长 = 实际内容：transition 短路段只计 activeEnd（与主链收窗同规则）
-    const len = seg.activeEnd ?? seg.duration;
+    // 链长 = 实际内容：声明池比单元窗口长时按窗口算（空池不算链长）
+    const len = contentEndOf(seg);
     chain.spans.push({ scene: sc, seg, start: cs, end: cs + len });
     cs += len;
     sc = (seg.transitionNext as SceneInternal<unknown> | undefined) ?? sc.next;

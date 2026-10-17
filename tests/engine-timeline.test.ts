@@ -3,7 +3,7 @@
  * 真跑 TimelineEngine + MemoryFrameSink，逐帧断言聚合快照与帧数。
  */
 import { describe, expect, it } from "vitest";
-import { TimelineEngine, createScene } from "@lingfan-video/core";
+import { TimelineEngine, clip, createScene } from "@lingfan-video/core";
 import { MemoryFrameSink } from "@lingfan-video/infra";
 import type { FrameState } from "@lingfan-video/contracts";
 
@@ -14,7 +14,7 @@ function makeEngine() {
     fps: FPS,
     width: 4,
     height: 4,
-    canvas: null,
+    canvas: { width: 1, height: 1 } as unknown as OffscreenCanvas,
     headless: true,
   });
   // 组合根（assemble）的职责在测试里手动复刻：CPU 占位 painter，全 0 位图
@@ -117,7 +117,7 @@ describe("spawn 链登记唯一性（注册期）", () => {
   it("登记期 spawn 链只登记一次：单元每帧只求值一次、音频事件不翻倍", async () => {
     let calls = 0;
     const bg = createScene(100, (_prev, env) => {
-      env.audio({ url: "bgm" });
+      env.audio(clip("bgm"));
       env.step(100, () => {
         calls++;
       });
@@ -129,7 +129,7 @@ describe("spawn 链登记唯一性（注册期）", () => {
     const summary = await makeEngine().run(main, new MemoryFrameSink());
     // 链内容 100ms 落在主链采样点 0/33.3/66.7 上；重复登记会让每处求值两次
     expect(calls).toBe(3);
-    expect(summary.audioEvents).toHaveLength(1);
+    expect(summary.audioVoices).toHaveLength(1);
   });
 });
 

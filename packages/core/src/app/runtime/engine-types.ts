@@ -1,15 +1,17 @@
 import type {
   AssetSource,
+  AudioOutput,
+  AudioVoice,
   FrameBitmap,
   FrameIndex,
   FrameState,
   Ms,
 } from "@lingfan-video/contracts";
-import type { CompiledAudio } from "../../domain/simulation/types";
 import type {
   CompiledSegment,
   SceneInternal,
 } from "../../domain/simulation/types";
+import type { MutableVoice } from "./audio-runtime";
 
 /** 链上一段时间线占位（transition 提前收窗：end 取 activeEnd） */
 export interface ChainSpan {
@@ -36,14 +38,16 @@ export interface EngineOptions {
   headless: boolean;
   /** 资产来源（setup 阶段 assets.load 的后端；缺省 = fail-fast 实现） */
   assets?: AssetSource;
+  /** 预览端实时音频输出（注入 = 运行期发射即时发声；缺省 = 只记录声音） */
+  audioOut?: AudioOutput;
 }
 
 export interface RunSummary {
   frames: number;
   durationMs: Ms;
   lastState: FrameState;
-  /** 全时间线音频事件（组合根混音用；事件模型不参与帧调度） */
-  audioEvents: import("./engine-types").AudioEvent[];
+  /** 全时间线声音记录（登记期声明 + 运行期发射；导出端据此离线渲染） */
+  audioVoices: readonly AudioVoice[];
 }
 
 /** 引擎可变状态：跨原子单元共享（自由函数显式传参，不散全局） */
@@ -51,16 +55,17 @@ export interface TimelineState {
   opts: EngineOptions;
   deadUnits: Set<string>; // `${sceneId}/${unitKey}`
   spawnChains: SpawnChain[];
-  audioEvents: AudioEvent[];
+  /** 声音记录（登记期已全局化；运行期发射追加） */
+  audioVoices: MutableVoice[];
+  /** 声音 id 序号（确定性分配） */
+  voiceSeq: number;
   form3: Map<string, { iteration: number; iterStart: Ms }>;
   spans: ChainSpan[];
   timelineEnd: Ms;
-}
-
-/** 引擎运行期钩子（预览端用：时间线建好后即可预排音频，不必等正片跑完） */
-export interface RunHooks {
-  /** 时间线构建完成即刻回调：全时间线音频事件 + 总时长 */
-  onAudioScript?(events: AudioEvent[], durationMs: Ms): void;
+  /** 当前求值时间（句柄操作／alive 判定的时间轴依据） */
+  nowMs: Ms;
+  /** 是否处于回调执行中（句柄操作的合法窗口） */
+  inCallback: boolean;
 }
 
 /** 引擎运行期句柄集合（frame-eval / spawn-handle 间共享的最小面） */
@@ -68,10 +73,4 @@ export interface EvalDeps {
   state: TimelineState;
   aggregator: import("../../domain/simulation").StateAggregator;
   painterPaint: (f: FrameIndex, t: Ms, state: FrameState) => FrameBitmap;
-}
-
-/** 全时间线音频事件（span 相对锚点已换算为全局绝对时间；forever 循环圈已展开） */
-export interface AudioEvent extends CompiledAudio {
-  /** 全局绝对时间（时间线轴） */
-  globalAtMs: Ms;
 }
