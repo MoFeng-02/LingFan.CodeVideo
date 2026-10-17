@@ -112,7 +112,7 @@ function checkNodes(
         cursor += maxPool;
         break;
       }
-      case "spawn":
+      case "spawn": {
         if (spawnKeys.has(n.options.key)) {
           errors.push({
             path,
@@ -121,7 +121,23 @@ function checkNodes(
           });
         }
         spawnKeys.add(n.options.key);
+        // 组合约束：forever 与显式 duration 互斥（寿命二义）
+        if (n.options.forever && n.options.duration !== undefined) {
+          errors.push({
+            path,
+            code: "spec_violation",
+            message: `spawn "${n.options.key}" 同时给 forever 与 duration=${n.options.duration}（寿命二义：forever 活到总链尾/kill，duration 是显式覆盖）`,
+          });
+        }
+        if (n.options.duration !== undefined && n.options.duration < 0) {
+          errors.push({
+            path,
+            code: "spec_violation",
+            message: `spawn "${n.options.key}" duration=${n.options.duration} 为负`,
+          });
+        }
         break;
+      }
       case "transition":
         return; // 提前收窗：其后节点不活跃，不再检查
       case "audio":

@@ -47,6 +47,27 @@ describe("validate（契约符合性检查）", () => {
     expect(errors.length).toBe(1);
     expect(errors[0]!.code).toBe("spec_violation");
   });
+
+  it("spawn forever 与 duration 并存 → spec_violation（寿命二义）", () => {
+    const bg = createScene(100, () => {});
+    const scene = createScene(1000, (_prev, env) => {
+      env.spawn(bg, { key: "bg", forever: true, duration: 500 });
+    });
+    const errors = validate(scene, 60);
+    expect(errors.length).toBe(1);
+    expect(errors[0]!.code).toBe("spec_violation");
+    expect(errors[0]!.message).toContain("寿命二义");
+  });
+
+  it("spawn 负 duration → spec_violation", () => {
+    const bg = createScene(100, () => {});
+    const scene = createScene(1000, (_prev, env) => {
+      env.spawn(bg, { key: "bg", duration: -100 });
+    });
+    const errors = validate(scene, 60);
+    expect(errors.length).toBe(1);
+    expect(errors[0]!.code).toBe("spec_violation");
+  });
 });
 
 describe("poolOf / loopPool（双池账本）", () => {
