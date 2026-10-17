@@ -5,6 +5,7 @@ import type {
   Ms,
   SendSpec,
 } from "@lingfan-video/contracts";
+import { DEFAULT_SYNTH_GAIN } from "@lingfan-video/contracts";
 import { SYNTH_CLIP } from "../audio/synth-clip";
 import type { SceneInternal, SimNode } from "./types";
 import type {
@@ -177,7 +178,7 @@ export function compileSegment(
             clip: SYNTH_CLIP,
             atMs: local,
             options: {
-              gain: { value: n.spec.gain ?? 0.4 },
+              gain: { value: n.spec.gain ?? DEFAULT_SYNTH_GAIN },
               pan: { value: n.spec.pan ?? 0 },
               ...(n.spec.bus ? { bus: n.spec.bus } : {}),
             },

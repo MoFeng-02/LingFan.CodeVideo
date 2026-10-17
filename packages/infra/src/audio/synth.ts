@@ -3,6 +3,12 @@
  * 同一份 spec + 同一声明布局 = 每次导出同样的样本；不使用 Math.random。
  */
 import type { Ms, SynthSpec, Waveform } from "@lingfan-video/contracts";
+import {
+  DEFAULT_SYNTH_GAIN,
+  DEFAULT_SYNTH_SEED,
+} from "@lingfan-video/contracts";
+
+export { DEFAULT_SYNTH_GAIN } from "@lingfan-video/contracts";
 
 const TAU = Math.PI * 2;
 
@@ -19,15 +25,20 @@ export function seededRandom(seed = 0x9e3779b9): () => number {
   };
 }
 
+/**
+ * 程序化音源的噪声种子：声明值优先，缺省取契约里的固定值（32 位无符号）。
+ * 预览与导出都走这一处换算，同一份 spec 在两端得到同一串噪声。
+ */
+export function synthSeed(spec: SynthSpec): number {
+  return (spec.seed ?? DEFAULT_SYNTH_SEED) >>> 0;
+}
+
 const DEFAULT_ENVELOPE = {
   attackMs: 5,
   decayMs: 30,
   sustain: 0.8,
   releaseMs: 80,
 };
-
-/** 缺省音量（spec.gain 未给时） */
-export const DEFAULT_SYNTH_GAIN = 0.4;
 
 /** ADSR 幅度（0..1），入参为源内局部毫秒 */
 export function synthEnvelopeAt(spec: SynthSpec, localMs: Ms): number {
@@ -117,7 +128,7 @@ export function renderSynth(
 ): SynthPcm {
   const frames = Math.max(1, Math.round((spec.durationMs / 1000) * sampleRate));
   const data = new Float32Array(frames * channels);
-  const rnd = seededRandom(12345);
+  const rnd = seededRandom(synthSeed(spec));
   const detune = spec.detune ?? 0;
   const freq = spec.freq * Math.pow(2, detune / 1200);
   const gain = Math.max(0, spec.gain ?? DEFAULT_SYNTH_GAIN);

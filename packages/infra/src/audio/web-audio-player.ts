@@ -17,7 +17,7 @@ import type {
 } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
 import { rateSegments, resolveWarp } from "./warp";
-import { seededRandom, synthAmpEnvelopePoints } from "./synth";
+import { seededRandom, synthAmpEnvelopePoints, synthSeed } from "./synth";
 import { evaluateVoice } from "./voice-timeline";
 
 /** 资源加载：把 clip url 变成 AudioBuffer（宿主注入，通常 fetch + decodeAudioData） */
@@ -376,7 +376,7 @@ export class WebAudioOutput implements AudioOutput {
       );
       const buffer = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
       const data = buffer.getChannelData(0);
-      const rnd = seededRandom(12345);
+      const rnd = seededRandom(synthSeed(spec));
       for (let i = 0; i < frames; i++) data[i] = rnd() * 2 - 1;
       const node = this.ctx.createBufferSource();
       node.buffer = buffer;

@@ -75,6 +75,65 @@ describe("程序化音源", () => {
     expect(a.data.length).toBe(48_000 * 2 * 0.2);
   });
 
+  it("噪声种子：同 seed 逐样本相同，换 seed 换一条噪声", () => {
+    const spec = {
+      wave: "noise" as const,
+      freq: 440,
+      durationMs: 100,
+      seed: 777,
+    };
+    const a = renderSynth(spec, 48_000, 1);
+    const b = renderSynth(spec, 48_000, 1);
+    expect(Array.from(a.data)).toEqual(Array.from(b.data));
+    const other = renderSynth({ ...spec, seed: 778 }, 48_000, 1);
+    expect(Array.from(other.data)).not.toEqual(Array.from(a.data));
+  });
+
+  it("非噪声波形忽略种子：换 seed 不改变样本", () => {
+    const base = { wave: "sine" as const, freq: 440, durationMs: 50 };
+    const a = renderSynth({ ...base, seed: 1 }, 48_000, 1);
+    const b = renderSynth({ ...base, seed: 2 }, 48_000, 1);
+    expect(Array.from(a.data)).toEqual(Array.from(b.data));
+  });
+
+  it("登记期声明的声音带 seed：离线混音用的就是声明种子那份样本", async () => {
+    const engine = makeEngine();
+    const scene = start(200, (env) => {
+      env.synth({ wave: "noise", freq: 440, durationMs: 200, seed: 4242 });
+      env.step(200, () => {});
+    });
+    const summary = await engine.run(scene, {
+      writeFrame: () => {},
+      finalize: async () => {},
+    });
+    const v = summary.audioVoices[0]!;
+    expect(v.synth?.seed).toBe(4242);
+    const mixer = new OfflineAudioMixer(
+      {
+        async decode() {
+          throw new Error("synth 不应走素材解码");
+        },
+      },
+      { sampleRate: 48_000, channels: 2 },
+    );
+    const [sample] = await mixer.renderProgram({
+      durationMs: 200,
+      voices: [v],
+    });
+    const declared = renderSynth(v.synth!, 48_000, 2);
+    // 缺省种子那份样本必须与声明种子不同，否则下面的比值断言没有区分力
+    const fallback = renderSynth({ ...v.synth!, seed: undefined }, 48_000, 2);
+    const i1 = 1000;
+    const i2 = 5000;
+    expect(Math.abs(declared.data[i1]! - fallback.data[i1]!)).toBeGreaterThan(
+      1e-3,
+    );
+    // 混音结果 = 样本 × 同一条增益曲线：两个采样点的比值一致即证明取的是声明种子那份
+    const r1 = sample!.data[i1]! / declared.data[i1]!;
+    const r2 = sample!.data[i2]! / declared.data[i2]!;
+    expect(r1).toBeCloseTo(r2, 5);
+  });
+
   it("ADSR 起音有斜坡、中段达峰、尾段释放归零", () => {
     const spec = {
       wave: "sine" as const,

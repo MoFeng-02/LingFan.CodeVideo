@@ -21,6 +21,7 @@ export {
   synthAmpEnvelopePoints,
   synthEnvelopeAt,
   synthEnvelopePoints,
+  synthSeed,
 } from "./audio/synth";
 export type { SynthPcm } from "./audio/synth";
 export type {

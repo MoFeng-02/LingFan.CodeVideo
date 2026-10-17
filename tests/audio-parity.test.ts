@@ -17,6 +17,7 @@ import type {
 import {
   WebAudioOutput,
   evaluateVoice,
+  renderSynth,
   synthEnvelopeAt,
 } from "@lingfan-video/infra";
 
@@ -57,6 +58,8 @@ function makeHarness() {
   const sources: SourceRec[] = [];
   const gains: GainRec[] = [];
   const oscs: OscRec[] = [];
+  /** 噪声源缓冲：预览端按同一套伪随机序列填样，可与导出端逐样本比对 */
+  const buffers: Float32Array[] = [];
   const param = (events: ParamEvent[], rec: { value: number }) => ({
     get value() {
       return rec.value;
@@ -73,7 +76,17 @@ function makeHarness() {
   });
   const ctx = {
     currentTime: START_CTX_SEC,
+    sampleRate: 48_000,
     destination: {},
+    createBuffer(channels: number, frames: number) {
+      const data = new Float32Array(frames);
+      buffers.push(data);
+      return {
+        numberOfChannels: channels,
+        length: frames,
+        getChannelData: () => data,
+      } as unknown as AudioBuffer;
+    },
     createBufferSource() {
       const rec: SourceRec = { loop: false, rate: [] };
       sources.push(rec);
@@ -128,7 +141,7 @@ function makeHarness() {
       };
     },
   };
-  return { ctx: ctx as unknown as AudioContext, sources, gains, oscs };
+  return { ctx: ctx as unknown as AudioContext, sources, gains, oscs, buffers };
 }
 
 /**
@@ -207,8 +220,29 @@ async function previewSynthOf(
   return { ampEvents: h.gains[2]!.events, gainEvents: h.gains[3]!.events };
 }
 
-/** 求两个求值函数在 [from, to) 网格上的最大绝对差 */
-function maxDelta(
+/**
+ * 噪声波形走缓冲分支：预览端自己按种子填样，导出端按同一种子合成。
+ * 返回预览端真实写进音频缓冲的样本，供与导出端逐样本比对。
+ */
+async function previewNoiseOf(
+  voice: AudioVoice,
+  durationMs: Ms,
+): Promise<Float32Array> {
+  const h = makeHarness();
+  const out = new WebAudioOutput(
+    h.ctx,
+    async () => ({ duration: 0 }) as AudioBuffer,
+  );
+  await out.begin({ durationMs, voices: [voice] } as AudioProgram);
+  await flush();
+  // 母线两条增益 + 包络增益 + 声音增益；噪声源是缓冲节点而非振荡器
+  expect(h.gains).toHaveLength(4);
+  expect(h.sources).toHaveLength(1);
+  expect(h.oscs).toHaveLength(0);
+  return h.buffers[0]!;
+}
+
+/** 求两个求值函数在 [from, to) 网格上的最大绝对差 */ function maxDelta(
   from: Ms,
   to: Ms,
   a: (ms: Ms) => number,
@@ -356,5 +390,29 @@ describe("双端音频等价性", () => {
         tl.gainAt(ms),
     );
     expect(delta).toBeLessThan(EPS);
+  });
+
+  it("噪声波形：预览端缓冲与导出端逐样本同源，由声明的种子决定", async () => {
+    // 常幅包络（振幅全由增益节点承担），两端剩下的就只有噪声序列本身
+    const spec: SynthSpec = {
+      wave: "noise",
+      freq: 440,
+      durationMs: 200,
+      gain: 1,
+      seed: 2024,
+      envelope: { attackMs: 0, decayMs: 0, sustain: 1, releaseMs: 0 },
+    };
+    const buf = await previewNoiseOf(voice({ synth: spec }), 300);
+    const pcm = renderSynth(spec, 48_000, 1);
+    expect(buf.length).toBe(pcm.data.length);
+    for (const i of [1, 1000, 4000, pcm.data.length - 1])
+      expect(buf[i]).toBe(pcm.data[i]);
+
+    // 换种子：预览与导出同时对同一份新序列取数
+    const changed: SynthSpec = { ...spec, seed: 2025 };
+    const other = await previewNoiseOf(voice({ synth: changed }), 300);
+    const otherPcm = renderSynth(changed, 48_000, 1);
+    for (const i of [1, 1000]) expect(other[i]).toBe(otherPcm.data[i]);
+    expect(Array.from(other)).not.toEqual(Array.from(buf));
   });
 });

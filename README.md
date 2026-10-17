@@ -62,6 +62,7 @@ tests/               集中式单元/端到端测试，不是包
 - **静默段也能有运行期逻辑**：`wait(ms, onUpdate?)` 自身不产帧，但在「同帧有别的单元产帧」的网格点上逐帧回调（回调能力集只含声音/消杀/时间，不含 `step/loop/par/spawn`）；整段纯空窗时零回调（wait 不产帧就没有网格点），要这段真有逻辑就用 `step`。运行期 `ctx.audio({ at })` 的 `at` 是**相对发射时刻的延迟**（「300ms 后响」），登记期 `env.audio({ at })` 才是相对登记位置——两条语义并存，不混用。
 - **音频变速**：`warp` 分段线性时间映射——突然加速/恢复/不恢复、`srcMs:"end"` 自动填满区间、踩点；变速即变调（磁带式）。求值只有一处（`infra/audio/voice-timeline.ts`）：导出逐样本、预览转 AudioParam 自动化。
 - **程序化音源也是声音**：`env.synth({ wave:"triangle", freq:660, durationMs:700 })`（登记期）与 `ctx.synth(...)`（运行期）产出与 `audio` 同形态的声音（增益/包络/pan/句柄/时间线终界全沿用）；振荡器相位从 0 起算、噪声是 xorshift32，同一份 spec 每次导出逐样本相同。合成声源时值已知，`fadeOut`/`fromEnd` 包络因此能落点。
+- **噪声可复现**：`synth` 的 `seed` 只作用于 `noise` 波形（其余波形忽略），不声明则用固定缺省种子——同 seed + 同采样率得到逐样本相同的噪声，预览与导出取的是同一套伪随机序列，所以「每次导出都一样」对噪声同样成立。
 - **效果是总线的一部分**：`env.bus({ id:"echo", effects:[{ kind:"delay", delayMs:180, feedback:0.35, mix:0.5 }] })` 声明一次，之后 `ctx.audio(clip, { bus:"echo" })` 或 `ctx.synth(..., { bus:"echo" })` 就挂上去；`filter`/`compressor`/`delay`/`reverb` 按声明顺序就地作用，导出端自研 DSP（确定性、可复算），预览端用 WebAudio 节点（音色近似、时序一致）。
 - **画什么就采什么**：视频的像素事实来源是绘制目标本身——step 回调画在 `ctx.canvas` 上，导出时引擎逐帧从该画布回读（`getImageData`）；GPU/离屏路径注入 `RenderOptions.painter`。不存在第二份像素来源，也不会静默交空白帧：两者都没有时缺省 `spec_violation`（首帧取像素时报），真要占位位图必须显式 `frames:"allow-blank"`。
 - **导出 mp4 自带音轨**：`WebCodecsExporter` 用 H.264 + AAC-LC 编码并自封装 mp4，声音走 `OfflineAudioMixer`（与预览同一份合成公式/求值点）；组合根顺序是「帧 → 声 → finalize」，有声音却没音轨出口会直接 `spec_violation`，不静默丢声。浏览器示例点「导出 MP4」即可下载（`pnpm dev`）。

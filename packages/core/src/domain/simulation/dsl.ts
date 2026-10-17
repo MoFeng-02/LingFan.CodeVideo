@@ -16,7 +16,7 @@ import type {
   WaitFn,
   WaitOptions,
 } from "@lingfan-video/contracts";
-import { assertAutomation, loop as loopUntil } from "../audio";
+import { assertAutomation, assertSynth, loop as loopUntil } from "../audio";
 import type { SceneInternal, SimNode } from "./types";
 
 let sceneSeq = 0;
@@ -169,23 +169,7 @@ export class Recorder implements SceneEnv {
 
   synth(spec: SynthSpec): void {
     // 程序化音源：起点 = 当前登记位置（与 audio 同为声明，不推进 cursor）
-    if (!(spec.durationMs > 0) || !Number.isFinite(spec.durationMs)) {
-      const err = new Error(
-        `synth（${spec.wave}）durationMs=${spec.durationMs} 须为 > 0 的有限数`,
-      );
-      err.name = "SpecViolation";
-      throw err;
-    }
-    if (
-      spec.wave !== "noise" &&
-      (!(spec.freq > 0) || !Number.isFinite(spec.freq))
-    ) {
-      const err = new Error(
-        `synth（${spec.wave}）freq=${spec.freq} 须为 > 0 的有限数`,
-      );
-      err.name = "SpecViolation";
-      throw err;
-    }
+    assertSynth(spec);
     this.nodes.push({ kind: "synth", spec, anchor: this.cursor });
   }
 
