@@ -11,6 +11,7 @@ import type {
   SendSpec,
   SetupEnv,
   StepFn,
+  SynthSpec,
   WaitContext,
   WaitFn,
 } from "@lingfan-video/contracts";
@@ -56,6 +57,7 @@ export type SimNode =
       options: AudioOptions;
       anchor: Ms;
     }
+  | { kind: "synth"; spec: SynthSpec; anchor: Ms }
   | { kind: "bus"; spec: BusSpec }
   | { kind: "send"; spec: SendSpec }
   | { kind: "duck"; rule: DuckRule };
@@ -133,6 +135,8 @@ export interface CompiledAudio {
   /** 段内偏移：登记位置 + options.at */
   atMs: Ms;
   readonly options: AudioOptions;
+  /** 程序化音源（B4-2）：有该字段时 clip 只是占位身份 */
+  readonly synth?: SynthSpec;
 }
 
 /** 单段编译结果（衔接下一片段由 runtime 链式推进） */

@@ -1,7 +1,7 @@
 import type { Ms } from "../shared/units";
 import type { Handle, KillOptions, Scheduler } from "../scheduler";
 import type { FrameState } from "../feedback";
-import type { AudioClip, AudioHandle, AudioOptions } from "../audio";
+import type { AudioClip, AudioHandle, AudioOptions, SynthSpec } from "../audio";
 import type { AudioGraphEnv } from "../audio/graph";
 import type { CanvasEnv, Scene } from "./entities";
 
@@ -9,6 +9,8 @@ import type { CanvasEnv, Scene } from "./entities";
 export interface AudioEnv {
   /** 立刻发声并返回句柄；寿命 = 源播完 / stop() / 总时间线尾 */
   audio(clip: AudioClip, options?: AudioOptions): AudioHandle;
+  /** 程序化音源（B4-2）：不依赖素材文件，按参数确定性合成并立刻发声 */
+  synth(spec: SynthSpec): AudioHandle;
 }
 
 /** step 回调：返回 FrameState 即发布状态（经 key 化聚合合并），返回 void 无状态发布 */

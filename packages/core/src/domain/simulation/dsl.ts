@@ -11,6 +11,7 @@ import type {
   SpawnOptions,
   StepFn,
   StepOptions,
+  SynthSpec,
   WaitFn,
   WaitOptions,
 } from "@lingfan-video/contracts";
@@ -163,6 +164,28 @@ export class Recorder implements SceneEnv {
   bgm(clip: AudioClip, options?: Omit<AudioOptions, "loop">): void {
     // bgm 糖：循环到时间线尾（要定制循环区间请用 audio + loop(untilMs)）
     this.audio(clip, { ...options, loop: loopUntil() });
+  }
+
+  synth(spec: SynthSpec): void {
+    // 程序化音源：起点 = 当前登记位置（与 audio 同为声明，不推进 cursor）
+    if (!(spec.durationMs > 0) || !Number.isFinite(spec.durationMs)) {
+      const err = new Error(
+        `synth（${spec.wave}）durationMs=${spec.durationMs} 须为 > 0 的有限数`,
+      );
+      err.name = "SpecViolation";
+      throw err;
+    }
+    if (
+      spec.wave !== "noise" &&
+      (!(spec.freq > 0) || !Number.isFinite(spec.freq))
+    ) {
+      const err = new Error(
+        `synth（${spec.wave}）freq=${spec.freq} 须为 > 0 的有限数`,
+      );
+      err.name = "SpecViolation";
+      throw err;
+    }
+    this.nodes.push({ kind: "synth", spec, anchor: this.cursor });
   }
 
   bus(spec: BusSpec): void {

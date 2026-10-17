@@ -1,4 +1,9 @@
-import type { Ms, Scene, ValidationError } from "@lingfan-video/contracts";
+import type {
+  Ms,
+  Scene,
+  SynthSpec,
+  ValidationError,
+} from "@lingfan-video/contracts";
 import type { SceneInternal, SimNode } from "../simulation/types";
 import { Recorder } from "../simulation/dsl";
 
@@ -166,7 +171,53 @@ function checkNodes(
       case "audio":
         checkAudio(path, n, errors);
         break;
+      case "synth":
+        checkSynth(path, n.spec, errors);
+        break;
     }
+  }
+}
+
+/**
+ * 程序化音源检查（B4-2）：字面量可直接构造 spec，不能只靠构造期校验。
+ */
+function checkSynth(
+  path: string,
+  spec: SynthSpec,
+  errors: ValidationError[],
+): void {
+  const push = (message: string): void => {
+    errors.push({ path, code: "spec_violation", message });
+  };
+  const tag = `synth (${spec.wave})`;
+  if (!(spec.durationMs > 0) || !Number.isFinite(spec.durationMs))
+    push(`${tag} durationMs=${spec.durationMs} 须为 > 0 的有限数`);
+  if (
+    spec.wave !== "noise" &&
+    (!(spec.freq > 0) || !Number.isFinite(spec.freq))
+  )
+    push(`${tag} freq=${spec.freq} 须为 > 0 的有限数（噪声波形除外）`);
+  if (spec.detune !== undefined && !Number.isFinite(spec.detune))
+    push(`${tag} detune=${spec.detune} 须为有限数`);
+  if (
+    spec.gain !== undefined &&
+    (!(spec.gain >= 0) || !Number.isFinite(spec.gain))
+  )
+    push(`${tag} gain=${spec.gain} 须为 ≥0 的有限数`);
+  if (
+    spec.pan !== undefined &&
+    (!(Math.abs(spec.pan) <= 1) || !Number.isFinite(spec.pan))
+  )
+    push(`${tag} pan=${spec.pan} 须在 [-1, 1]`);
+  const env = spec.envelope;
+  if (env) {
+    for (const key of ["attackMs", "decayMs", "releaseMs"] as const) {
+      const v = env[key];
+      if (!(v >= 0) || !Number.isFinite(v))
+        push(`${tag} envelope.${key}=${v} 须为 ≥0 的有限数`);
+    }
+    if (!(env.sustain >= 0 && env.sustain <= 1))
+      push(`${tag} envelope.sustain=${env.sustain} 须在 [0, 1]`);
   }
 }
 

@@ -61,6 +61,8 @@ tests/               集中式单元/端到端测试，不是包
 - **音频不占时间**：发声不推进时间池、不产帧；需要「只有声音的段落」用 `wait(ms)`。
 - **静默段也能有运行期逻辑**：`wait(ms, onUpdate?)` 自身不产帧，但在「同帧有别的单元产帧」的网格点上逐帧回调（回调能力集只含声音/消杀/时间，不含 `step/loop/par/spawn`）；整段纯空窗时零回调是已知边界，要这段真有逻辑就用 `step`。运行期 `ctx.audio({ at })` 的 `at` 是**相对发射时刻的延迟**（「300ms 后响」），登记期 `env.audio({ at })` 才是相对登记位置——两条语义并存，不混用。
 - **音频变速**：`warp` 分段线性时间映射——突然加速/恢复/不恢复、`srcMs:"end"` 自动填满区间、踩点；变速即变调（磁带式）。求值只有一处（`infra/audio/voice-timeline.ts`）：导出逐样本、预览转 AudioParam 自动化。
+- **程序化音源也是声音**：`env.synth({ wave:"triangle", freq:660, durationMs:700 })`（登记期）与 `ctx.synth(...)`（运行期）产出与 `audio` 同形态的声音（增益/包络/pan/句柄/时间线终界全沿用）；振荡器相位从 0 起算、噪声是 xorshift32，同一份 spec 每次导出逐样本相同。合成声源时值已知，`fadeOut`/`fromEnd` 包络因此能落点。
+- **效果是总线的一部分**：`env.bus({ id:"echo", effects:[{ kind:"delay", delayMs:180, feedback:0.35, mix:0.5 }] })` 声明一次，之后 `ctx.audio(clip, { bus:"echo" })` 或 `ctx.synth(..., { bus:"echo" })` 就挂上去；`filter`/`compressor`/`delay`/`reverb` 按声明顺序就地作用，导出端自研 DSP（确定性、可复算），预览端用 WebAudio 节点（音色近似、时序一致）。
 - **画什么就采什么**：视频的像素事实来源是绘制目标本身——step 回调画在 `ctx.canvas` 上，导出时引擎逐帧从该画布回读（`getImageData`）；GPU/离屏路径注入 `RenderOptions.painter`。不存在第二份像素来源，也不会静默交空白帧：两者都没有时缺省 `spec_violation`（首帧取像素时报），真要占位位图必须显式 `frames:"allow-blank"`。
 - **导出 mp4 自带音轨**：`WebCodecsExporter` 用 H.264 + AAC-LC 编码并自封装 mp4，声音走 `OfflineAudioMixer`（与预览同一份合成公式/求值点）；组合根顺序是「帧 → 声 → finalize」，有声音却没音轨出口会直接 `spec_violation`，不静默丢声。浏览器示例点「导出 MP4」即可下载（`pnpm dev`）。
 - **预览用音频时钟做主时钟**：`PacedPreviewExporter`（infra）按 `WebAudioOutput.nowMs()` 排帧——首次创建 AudioContext 时其时钟可能冷启动数秒，画面若跟墙钟就会「画面放完声音还在响」；无音频时钟或时钟停滞时自动退回墙钟，预览不会卡死。
@@ -69,7 +71,7 @@ tests/               集中式单元/端到端测试，不是包
 ## 文档
 
 - 规约索引：[私有文档/CodeVideo规约/README.md](私有文档/CodeVideo规约/README.md)
-- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟、§9.13 消杀与消亡过程、§9.14 帧来源缺失显式化、§9.15 `wait` 回调与运行期音频延迟、§9.16 `once` 事件去重与包络组合子、§9.17 音频图 bus/sends/ducking）
+- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟、§9.13 消杀与消亡过程、§9.14 帧来源缺失显式化、§9.15 `wait` 回调与运行期音频延迟、§9.16 `once` 事件去重与包络组合子、§9.17 音频图 bus/sends/ducking、§9.18 程序化音源与延迟/混响）
 - 契约设计规则：[13 号](私有文档/CodeVideo规约/13-contract-design.md)
 - 目录规划：[14 号](私有文档/CodeVideo规约/14-directory-plan.md)
-- B 阶段设计与裁决（游戏判据、wait 回调、事件去重、音频图 bus/sends/ducking）：[15 号](私有文档/CodeVideo规约/15-audio-graph-and-play-semantics.md)
+- B 阶段设计与裁决（游戏判据、wait 回调、事件去重、音频图 bus/sends/ducking、程序化音源与延迟/混响）：[15 号](私有文档/CodeVideo规约/15-audio-graph-and-play-semantics.md)

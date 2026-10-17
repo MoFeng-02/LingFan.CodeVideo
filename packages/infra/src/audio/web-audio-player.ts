@@ -17,6 +17,7 @@ import type {
 } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
 import { rateSegments, resolveWarp } from "./warp";
+import { seededRandom, synthEnvelopePoints } from "./synth";
 import { evaluateVoice } from "./voice-timeline";
 
 /** 资源加载：把 clip url 变成 AudioBuffer（宿主注入，通常 fetch + decodeAudioData） */
@@ -52,7 +53,11 @@ export class WebAudioOutput implements AudioOutput {
     this.startedAtSec = this.ctx.currentTime + SCHEDULE_LEAD_SEC;
     this.programDurationMs = program.durationMs;
     this.buildBuses(program.graph);
-    await Promise.all(program.voices.map((v) => this.bufferOf(v.clip.url)));
+    await Promise.all(
+      program.voices
+        .filter((v) => !v.synth)
+        .map((v) => this.bufferOf(v.clip.url)),
+    );
     for (const voice of program.voices) this.schedule(voice);
   }
 
@@ -118,7 +123,7 @@ export class WebAudioOutput implements AudioOutput {
           filter.Q.value = eff.q ?? Math.SQRT1_2;
           tail.connect(filter);
           tail = filter;
-        } else {
+        } else if (eff.kind === "compressor") {
           const comp = this.ctx.createDynamicsCompressor();
           comp.threshold.value = eff.thresholdDb;
           comp.ratio.value = eff.ratio;
@@ -127,6 +132,38 @@ export class WebAudioOutput implements AudioOutput {
           comp.knee.value = eff.kneeDb ?? 6;
           tail.connect(comp);
           tail = comp;
+        } else if (eff.kind === "delay") {
+          const delay = this.ctx.createDelay(5);
+          delay.delayTime.value = Math.max(0.001, eff.delayMs / 1000);
+          const fb = this.ctx.createGain();
+          fb.gain.value = Math.max(0, Math.min(0.95, eff.feedback ?? 0.3));
+          const wet = this.ctx.createGain();
+          wet.gain.value = Math.max(0, Math.min(1, eff.mix ?? 0.5));
+          const dry = this.ctx.createGain();
+          dry.gain.value = 1 - wet.gain.value;
+          const merge = this.ctx.createGain();
+          tail.connect(dry);
+          dry.connect(merge);
+          tail.connect(delay);
+          delay.connect(wet);
+          wet.connect(merge);
+          delay.connect(fb);
+          fb.connect(delay);
+          tail = merge;
+        } else {
+          const conv = this.ctx.createConvolver();
+          conv.buffer = makeReverbImpulse(this.ctx, eff);
+          const wet = this.ctx.createGain();
+          wet.gain.value = Math.max(0, Math.min(1, eff.mix ?? 0.35));
+          const dry = this.ctx.createGain();
+          dry.gain.value = 1 - wet.gain.value;
+          const merge = this.ctx.createGain();
+          tail.connect(dry);
+          dry.connect(merge);
+          tail.connect(conv);
+          conv.connect(wet);
+          wet.connect(merge);
+          tail = merge;
         }
       }
       tail.connect(gain);
@@ -223,6 +260,7 @@ export class WebAudioOutput implements AudioOutput {
 
   /** 单声音节点图：source（含变速自动化）→ gain（包络）→ [pan] → destination */
   private schedule(voice: AudioVoice): LiveVoice | null {
+    if (voice.synth) return this.scheduleSynth(voice);
     const pending = this.bufferOf(voice.clip.url);
     let src: AudioBufferSourceNode | null = null;
     let gain: GainNode | null = null;
@@ -312,6 +350,103 @@ export class WebAudioOutput implements AudioOutput {
   }
 
   /**
+   * 程序化音源排程（B4-2）：振荡器/噪声源 + ADSR 自动化 + 声音增益，
+   * 与导出端共用同一组包络折点（时值由 spec.durationMs 决定，已知）。
+   * 诚实边界：预览端振荡器不复刻 rate/warp（导出端是重采样，音高/时长一致；
+   * 预览端 synth 的变速留到 B4-3 与离线同源时再对齐）。
+   */
+  private scheduleSynth(voice: AudioVoice): LiveVoice | null {
+    const spec = voice.synth!;
+    const tl = evaluateVoice(voice, spec.durationMs, this.programDurationMs);
+    if (tl.endMs <= tl.startMs) return null;
+    const start = Math.max(this.ctxSecOf(tl.startMs), this.ctx.currentTime);
+    const end = this.ctxSecOf(tl.endMs);
+    const gain = this.ctx.createGain();
+    this.applyGain(
+      gain.gain,
+      combineGainPoints(synthEnvelopePoints(spec), tl.gainPoints),
+      end,
+    );
+    let src: AudioScheduledSourceNode;
+    let osc: OscillatorNode | null = null;
+    let rateParam: AudioParam | null = null;
+    if (spec.wave === "noise") {
+      const frames = Math.max(
+        1,
+        Math.round((spec.durationMs / 1000) * this.ctx.sampleRate),
+      );
+      const buffer = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      const rnd = seededRandom(12345);
+      for (let i = 0; i < frames; i++) data[i] = rnd() * 2 - 1;
+      const node = this.ctx.createBufferSource();
+      node.buffer = buffer;
+      src = node;
+    } else {
+      osc = this.ctx.createOscillator();
+      osc.type =
+        spec.wave === "saw"
+          ? "sawtooth"
+          : spec.wave === "triangle"
+            ? "triangle"
+            : spec.wave === "square"
+              ? "square"
+              : "sine";
+      osc.frequency.value = Math.max(0.01, spec.freq);
+      osc.detune.value = spec.detune ?? 0;
+      rateParam = osc.detune;
+      src = osc;
+    }
+    src.connect(gain);
+    let tail: AudioNode = gain;
+    if (Math.abs(tl.pan) > 0) {
+      const panner = this.ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, tl.pan));
+      gain.connect(panner);
+      tail = panner;
+    }
+    const targetBus =
+      (voice.bus && this.buses.get(voice.bus)?.input) ||
+      this.buses.get(MASTER_BUS)?.input ||
+      this.ctx.destination;
+    tail.connect(targetBus);
+    src.start(start);
+    src.stop(end);
+    this.nodes.push(src as AudioBufferSourceNode);
+    const at = (globalMs: Ms): number =>
+      Math.max(this.ctxSecOf(globalMs), this.ctx.currentTime);
+    return {
+      stop: (atMs, fadeMs) => {
+        const stopAt = this.ctxSecOf(atMs);
+        const fadeFrom = Math.max(this.ctx.currentTime, stopAt - fadeMs / 1000);
+        gain.gain.setValueAtTime(gain.gain.value, fadeFrom);
+        gain.gain.linearRampToValueAtTime(0, stopAt);
+        try {
+          src.stop(stopAt);
+        } catch {
+          // 已停止
+        }
+      },
+      setGain: (atMs, value, rampMs) => {
+        const t = at(atMs);
+        gain.gain.setValueAtTime(gain.gain.value, t);
+        if (rampMs > 0)
+          gain.gain.linearRampToValueAtTime(value, t + rampMs / 1000);
+        else gain.gain.setValueAtTime(value, t);
+      },
+      setRate: (atMs, value, rampMs) => {
+        if (!rateParam || !osc) return;
+        const t = at(atMs);
+        const cents = 1200 * Math.log2(Math.max(1e-6, value));
+        rateParam.setValueAtTime(rateParam.value, t);
+        if (rampMs > 0)
+          rateParam.linearRampToValueAtTime(cents, t + rampMs / 1000);
+        else rateParam.setValueAtTime(cents, t);
+      },
+    };
+  }
+
+  /**
    * 变速自动化：warp 锚点斜率 / 恒速率 → playbackRate 分段（与导出端同一张表）。
    * playbackRate 重采样即磁带式变调，预览与离线混音的音高/时长一致。
    */
@@ -356,4 +491,49 @@ export class WebAudioOutput implements AudioOutput {
   nowMs(): Ms {
     return (this.ctx.currentTime - this.startedAtSec) * 1000;
   }
+}
+
+/** 折线合并：两组增益折点（ADSR × 声音增益）在并集上相乘 */
+function combineGainPoints(
+  a: readonly { atMs: Ms; gain: number }[],
+  b: readonly { atMs: Ms; gain: number }[],
+): readonly { atMs: Ms; gain: number }[] {
+  const times = [...new Set([...a, ...b].map((p) => p.atMs))].sort(
+    (x, y) => x - y,
+  );
+  const at = (pts: readonly { atMs: Ms; gain: number }[], ms: Ms): number => {
+    if (pts.length === 0) return 1;
+    if (ms <= pts[0]!.atMs) return pts[0]!.gain;
+    for (let i = 1; i < pts.length; i++) {
+      const p1 = pts[i]!;
+      if (ms <= p1.atMs) {
+        const p0 = pts[i - 1]!;
+        const span = p1.atMs - p0.atMs;
+        const k = span <= 0 ? 1 : (ms - p0.atMs) / span;
+        return p0.gain + (p1.gain - p0.gain) * k;
+      }
+    }
+    return pts[pts.length - 1]!.gain;
+  };
+  return times.map((ms) => ({ atMs: ms, gain: at(a, ms) * at(b, ms) }));
+}
+
+/** 确定性混响 IR（衰减噪声；预览端音色近似，时序与导出端一致） */
+function makeReverbImpulse(
+  ctx: AudioContext,
+  spec: { roomSize?: number; damping?: number },
+): AudioBuffer {
+  const seconds = 0.6 + (spec.roomSize ?? 0.7) * 1.6;
+  const frames = Math.max(1, Math.round(seconds * ctx.sampleRate));
+  const buffer = ctx.createBuffer(2, frames, ctx.sampleRate);
+  const rnd = seededRandom(6789);
+  const decay = 2.2 + (spec.damping ?? 0.4) * 2;
+  for (let c = 0; c < 2; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < frames; i++) {
+      const t = i / frames;
+      data[i] = (rnd() * 2 - 1) * Math.pow(1 - t, decay);
+    }
+  }
+  return buffer;
 }

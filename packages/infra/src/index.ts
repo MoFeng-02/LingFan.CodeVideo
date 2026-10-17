@@ -14,6 +14,13 @@ export type {
 } from "./export/mp4";
 export { MemoryFrameSink } from "./capture/memory-sink";
 export { OfflineAudioMixer } from "./audio/offline-mixer";
+export {
+  renderSynth,
+  seededRandom,
+  synthEnvelopeAt,
+  synthEnvelopePoints,
+} from "./audio/synth";
+export type { SynthPcm } from "./audio/synth";
 export type {
   AudioDecoder,
   DecodedPcm,

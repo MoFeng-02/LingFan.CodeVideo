@@ -1,5 +1,6 @@
 import type { Ms } from "../shared/units";
 import type { AudioClip } from "./entities";
+import type { SynthSpec } from "./synth";
 import type { AudioGraph, BusId, BusPoint } from "./graph";
 
 /**
@@ -128,6 +129,8 @@ export interface AudioVoice {
   readonly ops: readonly AudioOp[];
   /** 送往哪条总线（缺省 master） */
   readonly bus?: BusId;
+  /** 程序化音源（B4-2）：有该字段时 `clip` 只是占位身份，样本由 synth 求值 */
+  readonly synth?: SynthSpec;
 }
 
 /** 整条时间线的音频程序：样本 = f(program)（同 program 必同样本） */

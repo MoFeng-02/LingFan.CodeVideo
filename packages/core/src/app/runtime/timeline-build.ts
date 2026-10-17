@@ -77,7 +77,7 @@ function materializeAudio(state: TimelineState): void {
     for (const a of seg.audio) {
       const at = spanStart + a.atMs;
       if (at >= spanEnd) continue;
-      pushVoice(state, a.clip, at, a.options);
+      pushVoice(state, a.clip, at, a.options, a.synth);
     }
   };
   const walkSpans = (spans: ChainSpan[]): void => {

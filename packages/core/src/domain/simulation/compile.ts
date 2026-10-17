@@ -1,4 +1,5 @@
 import type { BusSpec, DuckRule, Ms, SendSpec } from "@lingfan-video/contracts";
+import { SYNTH_CLIP } from "../audio/synth-clip";
 import type { SceneInternal, SimNode } from "./types";
 import type {
   CompiledAudio,
@@ -160,6 +161,20 @@ export function compileSegment(
             clip: n.clip,
             atMs: local + (n.options.at ?? 0),
             options: n.options,
+          });
+          break;
+        }
+        case "synth": {
+          // 程序化音源：锚点 = 登记位置（不叠加 at，synth 无 at 选项）
+          audio.push({
+            clip: SYNTH_CLIP,
+            atMs: local,
+            options: {
+              gain: { value: n.spec.gain ?? 0.4 },
+              pan: { value: n.spec.pan ?? 0 },
+              ...(n.spec.bus ? { bus: n.spec.bus } : {}),
+            },
+            synth: n.spec,
           });
           break;
         }

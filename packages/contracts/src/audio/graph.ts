@@ -31,7 +31,29 @@ export interface CompressorSpec {
   readonly kneeDb?: number;
 }
 
-export type EffectSpec = FilterSpec | CompressorSpec;
+/** 总线效果：延迟线（确定性；B4-2） */
+export interface DelaySpec {
+  readonly kind: "delay";
+  /** 延迟时间（毫秒，> 0） */
+  readonly delayMs: Ms;
+  /** 反馈量 0..0.95（缺省 0.3） */
+  readonly feedback?: number;
+  /** 干湿比 0..1（缺省 0.5） */
+  readonly mix?: number;
+}
+
+/** 总线效果：简化 Freeverb（8 comb + 4 allpass，确定性；B4-2） */
+export interface ReverbSpec {
+  readonly kind: "reverb";
+  /** 房间大小 0..1（缺省 0.7） */
+  readonly roomSize?: number;
+  /** 高频阻尼 0..1（缺省 0.4） */
+  readonly damping?: number;
+  /** 干湿比 0..1（缺省 0.35） */
+  readonly mix?: number;
+}
+
+export type EffectSpec = FilterSpec | CompressorSpec | DelaySpec | ReverbSpec;
 
 /**
  * 总线规格（拓扑在登记期定死；运行期只能改参数/消杀，不能改父子关系）。

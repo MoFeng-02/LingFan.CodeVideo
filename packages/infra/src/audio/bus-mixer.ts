@@ -6,6 +6,8 @@
  */
 import type {
   AudioGraph,
+  DelaySpec,
+  ReverbSpec,
   AudioVoice,
   BusAutomation,
   BusId,
@@ -74,7 +76,9 @@ export function mixBusGraph(input: BusMixInput): Float32Array {
     // 效果（就地；顺序 = 声明顺序）
     for (const eff of spec.effects ?? []) {
       if (eff.kind === "filter") filterInPlace(sig, eff, sr, ch);
-      else compressorInPlace(sig, eff, sr, ch);
+      else if (eff.kind === "compressor") compressorInPlace(sig, eff, sr, ch);
+      else if (eff.kind === "delay") delayInPlace(sig, eff, sr, ch);
+      else reverbInPlace(sig, eff, sr, ch);
     }
     const out = new Float32Array(frames * ch);
     const auto = automation.get(id);
@@ -350,4 +354,86 @@ function panGain(pan: number, ch: number, outCh: number): number {
   if (outCh < 2) return 1;
   const p = Math.max(-1, Math.min(1, pan));
   return ch === 0 ? 1 - Math.max(0, p) : 1 - Math.max(0, -p);
+}
+
+/** 延迟线（确定性）：环形缓冲 + 反馈，干湿混合 */
+function delayInPlace(
+  buf: Float32Array,
+  spec: DelaySpec,
+  sr: number,
+  ch: number,
+): void {
+  const d = Math.max(1, Math.round((spec.delayMs * sr) / 1000));
+  const fb = Math.max(0, Math.min(0.95, spec.feedback ?? 0.3));
+  const mix = Math.max(0, Math.min(1, spec.mix ?? 0.5));
+  const line = new Float32Array(d);
+  const frames = Math.floor(buf.length / ch);
+  let idx = 0;
+  for (let f = 0; f < frames; f++) {
+    for (let c = 0; c < ch; c++) {
+      const i = f * ch + c;
+      const dry = buf[i]!;
+      const wet = line[idx]!;
+      line[idx] = dry + wet * fb;
+      buf[i] = dry * (1 - mix) + wet * mix;
+    }
+    idx = (idx + 1) % d;
+  }
+}
+
+const COMB_TUNING = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
+const ALLPASS_TUNING = [556, 441, 341, 225];
+const STEREO_SPREAD = 23;
+
+/**
+ * 简化 Freeverb（确定性）：8 comb 并联 + 4 allpass 串联，按 44.1k 基准调谐缩放。
+ * 与预览端 WebAudio 的 ConvolverNode 不是同一算法（诚实边界：音色近似，时序一致）。
+ */
+function reverbInPlace(
+  buf: Float32Array,
+  spec: ReverbSpec,
+  sr: number,
+  ch: number,
+): void {
+  const scale = sr / 44100;
+  const room = Math.max(0, Math.min(1, spec.roomSize ?? 0.7));
+  const damp = Math.max(0, Math.min(1, spec.damping ?? 0.4));
+  const mix = Math.max(0, Math.min(1, spec.mix ?? 0.35));
+  const feedback = room * 0.28 + 0.7;
+  const damp1 = damp * 0.4;
+  const damp2 = 1 - damp1;
+  const frames = Math.floor(buf.length / ch);
+  for (let c = 0; c < ch; c++) {
+    const spread = c * STEREO_SPREAD;
+    const combs = COMB_TUNING.map((t) => ({
+      buf: new Float32Array(Math.max(1, Math.round((t + spread) * scale))),
+      idx: 0,
+      store: 0,
+    }));
+    const aps = ALLPASS_TUNING.map((t) => ({
+      buf: new Float32Array(Math.max(1, Math.round((t + spread) * scale))),
+      idx: 0,
+    }));
+    for (let f = 0; f < frames; f++) {
+      const i = f * ch + c;
+      const dry = buf[i]!;
+      const input = dry * 0.015;
+      let out = 0;
+      for (const cb of combs) {
+        const y = cb.buf[cb.idx]!;
+        cb.store = y * damp2 + cb.store * damp1;
+        cb.buf[cb.idx] = input + cb.store * feedback;
+        cb.idx = (cb.idx + 1) % cb.buf.length;
+        out += y;
+      }
+      for (const ap of aps) {
+        const b = ap.buf[ap.idx]!;
+        const y = -out + b;
+        ap.buf[ap.idx] = out + b * 0.5;
+        ap.idx = (ap.idx + 1) % ap.buf.length;
+        out = y;
+      }
+      buf[i] = dry * (1 - mix) + out * mix;
+    }
+  }
 }

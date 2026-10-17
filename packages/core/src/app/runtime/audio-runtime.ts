@@ -12,6 +12,7 @@ import type {
   AudioOptions,
   AudioVoice,
   Ms,
+  SynthSpec,
 } from "@lingfan-video/contracts";
 import { makeVoice } from "../../domain/audio";
 import { makeRenderError } from "./error";
@@ -29,6 +30,8 @@ export interface MutableVoice {
   ops: AudioOp[];
   /** 送往哪条总线（缺省 master） */
   bus?: AudioVoice["bus"];
+  /** 程序化音源（B4-2） */
+  synth?: SynthSpec;
 }
 
 /** 新建声音记录并登记（id 由引擎序号分配，保证确定性） */
@@ -37,6 +40,7 @@ export function pushVoice(
   clip: AudioClip,
   startMs: Ms,
   options?: AudioOptions,
+  synth?: SynthSpec,
 ): MutableVoice {
   const voice = makeVoice(
     `voice#${state.voiceSeq++}`,
@@ -45,6 +49,7 @@ export function pushVoice(
     options,
   ) as MutableVoice;
   voice.ops = [];
+  if (synth) voice.synth = synth;
   state.audioVoices.push(voice);
   return voice;
 }
@@ -59,12 +64,13 @@ export function emitAudio(
   clip: AudioClip,
   options: AudioOptions | undefined,
   atMs: Ms,
+  synth?: SynthSpec,
 ): AudioHandle {
   const { state } = deps;
   // B2：运行期 `at` = 相对发射时刻的延迟（登记期语义 = 相对登记位置，见 compile）
   const delay = Math.max(0, options?.at ?? 0);
   const startMs = Math.max(0, atMs + delay);
-  const voice = pushVoice(state, clip, startMs, options);
+  const voice = pushVoice(state, clip, startMs, options, synth);
   const live = state.opts.audioOut?.start(voice);
   let stopped = false;
 

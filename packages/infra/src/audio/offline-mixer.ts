@@ -14,6 +14,7 @@ import type {
   Ms,
 } from "@lingfan-video/contracts";
 import { mixBusGraph } from "./bus-mixer";
+import { renderSynth } from "./synth";
 import { evaluateVoice } from "./voice-timeline";
 
 /** 离线解码器：把 clip 变成交错 Float32 PCM（平台适配器注入；Node 测试用合成器替代） */
@@ -56,14 +57,15 @@ export class OfflineAudioMixer implements AudioClock {
       1,
       Math.ceil((program.durationMs / 1000) * this.sampleRate),
     );
-    const cache = new Map<string, DecodedPcm>();
+    // 素材声 → 解码；程序化音源（B4-2）→ 确定性合成（按声音对象缓存，id 可重复）
+    const cache = new Map<AudioVoice, DecodedPcm>();
     for (const voice of program.voices)
-      await this.decodeCached(cache, voice.clip);
+      cache.set(voice, await this.pcmOf(voice));
     // 无音频图（旧程序）→ 直连 master 的快速路径；有图 → 走总线混音
     if (!hasGraph(program.graph)) {
       const out = new Float32Array(frames * this.channels);
       for (const voice of program.voices) {
-        const pcm = cache.get(voice.clip.url)!;
+        const pcm = cache.get(voice)!;
         this.layoutVoice(voice, pcm, out, frames, program.durationMs);
       }
       return [{ data: out, atMs: 0 }];
@@ -76,7 +78,7 @@ export class OfflineAudioMixer implements AudioClock {
       voices: program.voices,
       graph: program.graph!,
       layoutVoice: (voice, target, outFrames, durationMs) => {
-        const pcm = cache.get(voice.clip.url)!;
+        const pcm = cache.get(voice)!;
         this.layoutVoice(voice, pcm, target, outFrames, durationMs);
       },
     });
@@ -89,6 +91,21 @@ export class OfflineAudioMixer implements AudioClock {
     const { data, ...meta } = pcm;
     void data;
     return meta;
+  }
+
+  /** 单个声音的 PCM：synth 走合成，否则走素材解码（适配 DecodedPcm 形态） */
+  private async pcmOf(voice: AudioVoice): Promise<DecodedPcm> {
+    if (voice.synth) {
+      const pcm = renderSynth(voice.synth, this.sampleRate, this.channels);
+      return {
+        clip: voice.clip,
+        sampleRate: pcm.sampleRate,
+        channels: pcm.channels,
+        durationMs: pcm.durationMs,
+        data: pcm.data,
+      };
+    }
+    return this.decoder.decode(voice.clip);
   }
 
   private async decodeCached(

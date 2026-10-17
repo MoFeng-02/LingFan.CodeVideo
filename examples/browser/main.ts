@@ -131,6 +131,18 @@ const act2 = act1.cutTo(2000, (prev, env) => {
 const act3 = act2.cutTo(800, (prev, env) => {
   // 侧链：fx 出声时把 music 压 8dB（攻击/释放都是毫秒级，导出可复算）
   env.bus({ id: "fx" });
+  // B4-2：程序化音源 + 延迟效果（echo 总线）——不依赖任何素材文件
+  env.bus({
+    id: "echo",
+    effects: [{ kind: "delay", delayMs: 180, feedback: 0.35, mix: 0.5 }],
+  });
+  env.synth({
+    wave: "triangle",
+    freq: 660,
+    durationMs: 320,
+    gain: 0.18,
+    bus: "echo",
+  });
   env.duck({
     from: "fx",
     to: "music",
@@ -155,6 +167,14 @@ const act3 = act2.cutTo(800, (prev, env) => {
     if (!tail && ctx.progress > 0.9) {
       tail = true;
       ctx.audio(clip("blip"), { gain: gain(0.45, { fadeOut: 120 }) });
+      // 运行期也能现场合成：振荡器 + 延迟总线
+      ctx.synth({
+        wave: "sine",
+        freq: 880,
+        durationMs: 140,
+        gain: 0.12,
+        bus: "echo",
+      });
     }
     bg(ctx); // 整幅重绘（预览不逐帧清屏，未重绘的区域会留下上一帧）
     return title(ctx, "第三幕 · 收尾", `${prev.title} → 转场风声 + 加速收束`);

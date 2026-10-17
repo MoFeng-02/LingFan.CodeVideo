@@ -6,6 +6,7 @@ import type {
   BusSpec,
   DuckRule,
   SendSpec,
+  SynthSpec,
 } from "../audio";
 import type {
   LoopSpec,
@@ -54,6 +55,8 @@ export interface SceneEnv extends CanvasEnv {
   audio(clip: AudioClip, options?: AudioOptions): void;
   /** bgm 糖：缺省循环到时间线尾（显式 loop 可覆盖） */
   bgm(clip: AudioClip, options?: Omit<AudioOptions, "loop">): void;
+  /** 程序化音源（B4-2）：按参数确定性合成，起点 = 当前登记位置；返回 void（与 audio 一致） */
+  synth(spec: SynthSpec): void;
   /**
    * 登记期总线拓扑：建 bus、挂父总线下；重复登记同 id = 覆盖规格（最后声明为准）。
    * 拓扑（父子关系）只在这里定；运行期走 ctx.bus(id) 改参数。
