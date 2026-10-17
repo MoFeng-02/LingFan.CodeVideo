@@ -7,3 +7,4 @@ out/
 *.mp4
 *.webm
 .dsh-acl-recovery/
+/私有文档
