@@ -238,7 +238,7 @@ playBtn.addEventListener("click", () => {
   if (busy) {
     // 播放中：暂停/继续（画面靠预览 Exporter 挂起，音频靠上下文挂起）
     paused = !paused;
-    playBtn.textContent = paused ? "▶ 继续" : "⏸ 暂停";
+    playBtn.textContent = paused ? "继续" : "暂停";
     if (audioCtx) void (paused ? audioCtx.suspend() : audioCtx.resume());
     return;
   }
@@ -353,6 +353,6 @@ async function exportMp4(): Promise<void> {
     busy = false;
     playBtn.disabled = false;
     exportBtn.disabled = false;
-    exportBtn.textContent = "⬇ 导出 MP4";
+    exportBtn.textContent = "导出 MP4";
   }
 }
