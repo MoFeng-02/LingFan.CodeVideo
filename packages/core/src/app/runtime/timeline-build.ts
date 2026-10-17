@@ -37,7 +37,7 @@ export function buildTimeline(
     prev = seg.bodyResult;
     const end = start + (seg.activeEnd ?? seg.duration);
     state.spans.push({ scene: cur, seg, start, end });
-    state.spawnChains.push(...expandSpawns(state, seg, start, 0));
+    expandSpawns(state, seg, start, 0);
     start = end;
     cur = seg.transitionNext
       ? (seg.transitionNext as SceneInternal<unknown>)
@@ -134,15 +134,14 @@ function makeSetupEnv(
   return Object.assign(rec, { assets: hooks });
 }
 
-/** 展开 spawn 链（编译期锚定的）；depth 帽 3（嵌套 spawn） */
+/** 展开 spawn 链（编译期锚定的）；depth 帽 3（嵌套 spawn）。链登记由 buildChain 内完成，此处不再返回 */
 export function expandSpawns(
   state: TimelineState,
   seg: CompiledSegment,
   spanStart: Ms,
   depth: number,
-): SpawnChain[] {
-  if (depth > 3) return [];
-  const chains: SpawnChain[] = [];
+): void {
+  if (depth > 3) return;
   for (const s of seg.spawns) {
     const chain = buildChain(
       state,
@@ -153,11 +152,9 @@ export function expandSpawns(
       s.chainFps,
     );
     if (!chain) continue;
-    chains.push(chain);
     for (const sp of chain.spans)
-      chains.push(...expandSpawns(state, sp.seg, sp.start, depth + 1));
+      expandSpawns(state, sp.seg, sp.start, depth + 1);
   }
-  return chains;
 }
 
 /** 构造一条链并登记（同 key 活跃链已存在 → 返回 undefined，续接语义）；forever 端点先记 Infinity */

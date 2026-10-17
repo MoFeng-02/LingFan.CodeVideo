@@ -113,6 +113,26 @@ describe("聚合快照（key 化）", () => {
   });
 });
 
+describe("spawn 链登记唯一性（注册期）", () => {
+  it("登记期 spawn 链只登记一次：单元每帧只求值一次、音频事件不翻倍", async () => {
+    let calls = 0;
+    const bg = createScene(100, (_prev, env) => {
+      env.audio({ url: "bgm" });
+      env.step(100, () => {
+        calls++;
+      });
+    });
+    const main = createScene(300, (_prev, env) => {
+      env.spawn(bg, { key: "bg" }); // 锚点 = 登记游标 0
+      env.step(300, () => {});
+    });
+    const summary = await makeEngine().run(main, new MemoryFrameSink());
+    // 链内容 100ms 落在主链采样点 0/33.3/66.7 上；重复登记会让每处求值两次
+    expect(calls).toBe(3);
+    expect(summary.audioEvents).toHaveLength(1);
+  });
+});
+
 describe("loop（三种形式）", () => {
   it("form-2 loop ms×times 迭代数正确", async () => {
     let calls = 0;
