@@ -8,3 +8,6 @@ out/
 *.webm
 .dsh-acl-recovery/
 /私有文档
+.rules.md
+.rules.ai.md
+agent.md
