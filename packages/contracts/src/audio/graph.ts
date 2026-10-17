@@ -126,13 +126,16 @@ export type BusSendCount = number;
 /**
  * 运行期总线句柄：回调内改参数、按名字持有时长。
  * kill 支持 fadeOut 窗口——窗口内参数继续被求值，窗口结束后失效。
+ * gain/pan 的 rampMs：从**当前有效值**起线性过渡到目标值；过渡未结束时再次改参数，
+ * 从当前插值处重新起坡。参数按帧采样（帧间由混音端线性插值），
+ * 因此斜坡终点最多晚一帧对齐到采样点；rampMs ≤ 0 = 立即生效。
  */
 export interface BusHandle {
   readonly id: BusId;
   readonly alive: boolean;
   /** 改增益（rampMs 内线性过渡；缺省立即） */
   gain(value: number, rampMs?: Ms): void;
-  /** 改摆位 -1..1（rampMs 内线性过渡） */
+  /** 改摆位 -1..1（rampMs 内线性过渡；缺省立即） */
   pan(value: number, rampMs?: Ms): void;
   mute(value: boolean): void;
   solo(value: boolean): void;

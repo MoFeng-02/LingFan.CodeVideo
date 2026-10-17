@@ -13,7 +13,13 @@ import type {
 } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
 import type { CompiledSegment } from "../../domain/simulation/types";
-import type { BusParams, EvalDeps, TimelineState } from "./engine-types";
+import type {
+  BusParams,
+  BusRampState,
+  EvalDeps,
+  ParamRamp,
+  TimelineState,
+} from "./engine-types";
 import { makeRenderError } from "./error";
 
 const DEFAULT_PARAMS: BusParams = { gain: 1, pan: 0, mute: false, solo: false };
@@ -63,6 +69,59 @@ function paramsOf(state: TimelineState, id: BusId): BusParams {
   return state.busParams.get(id) ?? base;
 }
 
+/** 过渡曲线求值：起点之前保持起点值、终点之后保持目标值、区间内线性 */
+function rampValue(ramp: ParamRamp, atMs: Ms): number {
+  if (atMs <= ramp.fromMs) return ramp.from;
+  const end = ramp.fromMs + ramp.ms;
+  if (atMs >= end) return ramp.to;
+  return ramp.from + ((ramp.to - ramp.from) * (atMs - ramp.fromMs)) / ramp.ms;
+}
+
+/**
+ * 某一时刻的有效参数 = 目标值叠加未完成的过渡。
+ * 过渡按帧采样、帧间由混音端线性插值，因此斜坡终点最多晚一帧对齐到采样点。
+ */
+function paramsAt(state: TimelineState, id: BusId, atMs: Ms): BusParams {
+  const target = paramsOf(state, id);
+  const ramps = state.busRamps.get(id);
+  if (!ramps) return target;
+  return {
+    ...target,
+    gain: ramps.gain ? rampValue(ramps.gain, atMs) : target.gain,
+    pan: ramps.pan ? rampValue(ramps.pan, atMs) : target.pan,
+  };
+}
+
+/** 已完成的过渡出清（未完成的保留；全部完成即移除该总线的记录） */
+function pruneRamps(state: TimelineState, id: BusId, atMs: Ms): void {
+  const ramps = state.busRamps.get(id);
+  if (!ramps) return;
+  if (ramps.gain && atMs >= ramps.gain.fromMs + ramps.gain.ms)
+    delete ramps.gain;
+  if (ramps.pan && atMs >= ramps.pan.fromMs + ramps.pan.ms) delete ramps.pan;
+  if (!ramps.gain && !ramps.pan) state.busRamps.delete(id);
+}
+
+/**
+ * 登记参数过渡：起点取当前有效值（在途过渡的当前插值），目标写入即时参数。
+ * rampMs ≤ 0 = 立即生效并清掉该参数的在途过渡。
+ */
+function registerRamp(
+  state: TimelineState,
+  id: BusId,
+  key: keyof Pick<BusParams, "gain" | "pan">,
+  to: number,
+  rampMs: Ms | undefined,
+): void {
+  const from = paramsAt(state, id, state.nowMs)[key];
+  const ms = Math.max(0, rampMs ?? 0);
+  const ramps: BusRampState = state.busRamps.get(id) ?? {};
+  if (ms > 0) ramps[key] = { fromMs: state.nowMs, ms, from, to };
+  else delete ramps[key];
+  if (ramps.gain || ramps.pan) state.busRamps.set(id, ramps);
+  else state.busRamps.delete(id);
+}
+
 /**
  * 采样点记录：逐帧记录，不做「相邻相同值去重」——去重会把「保持段」折叠成
  * 稀疏点，混音端的线性插值就会把恒定段提前斜坡化（kill fadeOut 曾被吃掉
@@ -89,7 +148,7 @@ export function sampleBuses(deps: EvalDeps, t: Ms): void {
     ...state.busParams.keys(),
   ]);
   for (const id of ids) {
-    const p = paramsOf(state, id);
+    const p = paramsAt(state, id, t);
     const kill = state.busKill.get(id);
     // 消亡窗口：窗口内继续出参数（引擎不改你的曲线），窗口结束才静音
     let gain = p.gain;
@@ -111,18 +170,24 @@ export function sampleBuses(deps: EvalDeps, t: Ms): void {
       mute: muted,
       solo: p.solo,
     });
+    pruneRamps(state, id, t);
   }
 }
 
-/** 总线参数更新（预览端据此同步实时音频图；无 setBus 的实现忽略） */
+/**
+ * 总线参数更新（预览端据此同步实时音频图；无 setBus 的实现忽略）。
+ * 过渡时长取相邻两次下发的帧间隔，预览端按同一线性曲线跟随，与离线混音一致。
+ */
 export function flushBusUpdates(state: TimelineState, t: Ms): BusUpdate[] {
+  const rampMs = Math.max(0, t - (state.busFlushAt ?? t));
+  state.busFlushAt = t;
   const out: BusUpdate[] = [];
   const ids = new Set<string>([
     ...state.busSpecs.keys(),
     ...state.busParams.keys(),
   ]);
   for (const id of ids) {
-    const p = paramsOf(state, id);
+    const p = paramsAt(state, id, t);
     out.push({
       id,
       gain: p.gain,
@@ -130,6 +195,7 @@ export function flushBusUpdates(state: TimelineState, t: Ms): BusUpdate[] {
       mute: p.mute,
       solo: p.solo,
       at: t,
+      rampMs,
     });
   }
   return out;
@@ -146,10 +212,14 @@ export function makeBusHandle(deps: EvalDeps, id: BusId): BusHandle {
       `ctx.bus(${JSON.stringify(id)}) 只能在回调内调用（时间线语义在回调时间点生效）`,
     );
   const spec = state.busSpecs.get(id);
-  const current = () => paramsOf(state, id);
-  // 参数写入只改即时状态；轨迹点统一由帧末 sampleBuses 记录（一帧一点，避免重复点）
+  // 参数写入只改即时目标值；轨迹点统一由帧末 sampleBuses 记录（一帧一点，避免重复点）
   const write = (patch: Partial<BusParams>): void => {
-    state.busParams.set(id, { ...current(), ...patch });
+    state.busParams.set(id, { ...paramsOf(state, id), ...patch });
+  };
+  /** 带过渡地改一个参数：先按当前有效值登记斜坡，再落目标值 */
+  const setParam = (key: "gain" | "pan", to: number, rampMs?: Ms): void => {
+    registerRamp(state, id, key, to, rampMs);
+    write(key === "gain" ? { gain: to } : { pan: to });
   };
   return {
     id,
@@ -159,11 +229,11 @@ export function makeBusHandle(deps: EvalDeps, id: BusId): BusHandle {
       if (!kill) return true;
       return state.nowMs < kill.until;
     },
-    gain(value: number, _rampMs?: Ms): void {
-      write({ gain: Math.max(0, value) });
+    gain(value: number, rampMs?: Ms): void {
+      setParam("gain", Math.max(0, value), rampMs);
     },
-    pan(value: number, _rampMs?: Ms): void {
-      write({ pan: Math.max(-1, Math.min(1, value)) });
+    pan(value: number, rampMs?: Ms): void {
+      setParam("pan", Math.max(-1, Math.min(1, value)), rampMs);
     },
     mute(value: boolean): void {
       write({ mute: value });

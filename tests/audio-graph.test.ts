@@ -9,7 +9,7 @@ import { TimelineEngine, clip, createScene } from "@lingfan-video/core";
 import type { RunSummary } from "@lingfan-video/core";
 import { MemoryFrameSink, OfflineAudioMixer } from "@lingfan-video/infra";
 import type { DecodedPcm } from "@lingfan-video/infra";
-import type { Scene } from "@lingfan-video/contracts";
+import type { BusUpdate, Scene } from "@lingfan-video/contracts";
 
 const SR = 48_000;
 
@@ -136,6 +136,93 @@ describe("音频图：逐帧自动化", () => {
     // 0ms(0.2) → 100ms(0.8)：50ms 处 ≈ 0.5，之后保持 0.8
     expect(at(data, 50)).toBeCloseTo(0.5 * 0.5, 2);
     expect(at(data, 700)).toBeCloseTo(0.5 * 0.8, 2);
+  });
+});
+
+describe("音频图：参数过渡", () => {
+  it("gain 带 rampMs：过渡期间按线性插值采样", async () => {
+    const scene = createScene(1000, (_prev, env) => {
+      env.bus({ id: "music" });
+      env.audio(clip("pad"), { bus: "music" });
+      env.step(1000, (ctx) => {
+        if (ctx.t === 0) ctx.bus("music").gain(0, 300);
+      });
+    });
+    const summary = await run(scene, 20);
+    const data = await render(summary);
+    // 1 → 0 走 300ms：100ms 处 ≈ 2/3，200ms 处 ≈ 1/3，到位后静音
+    expect(at(data, 100)).toBeCloseTo(0.5 * (2 / 3), 2);
+    expect(at(data, 200)).toBeCloseTo(0.5 * (1 / 3), 2);
+    expect(at(data, 500)).toBeCloseTo(0, 2);
+  });
+
+  it("过渡未结束时重设：从当前插值处重新起坡", async () => {
+    const scene = createScene(1000, (_prev, env) => {
+      env.bus({ id: "music" });
+      env.audio(clip("pad"), { bus: "music" });
+      env.step(1000, (ctx) => {
+        if (ctx.t === 0) ctx.bus("music").gain(0.2, 100);
+        if (ctx.t === 50) ctx.bus("music").gain(1, 100);
+      });
+    });
+    const summary = await run(scene, 20);
+    const data = await render(summary);
+    // 50ms 的有效值 = 1 + (0.2-1)×0.5 = 0.6；再走 100ms → 0.8，200ms 到位
+    expect(at(data, 50)).toBeCloseTo(0.5 * 0.6, 2);
+    expect(at(data, 100)).toBeCloseTo(0.5 * 0.8, 2);
+    expect(at(data, 200)).toBeCloseTo(0.5, 2);
+  });
+
+  it("pan 带 rampMs：摆位过渡期间按插值分到左右声道", async () => {
+    const scene = createScene(1000, (_prev, env) => {
+      env.bus({ id: "music" });
+      env.audio(clip("pad"), { bus: "music" });
+      env.step(1000, (ctx) => {
+        if (ctx.t === 0) ctx.bus("music").pan(1, 100);
+      });
+    });
+    const summary = await run(scene, 20);
+    const data = await render(summary);
+    // 50ms 处 pan = 0.5 → 左声道 ×0.5；到位后左声道静音
+    expect(at(data, 50)).toBeCloseTo(0.5 * 0.5, 2);
+    expect(at(data, 200)).toBeCloseTo(0, 2);
+  });
+});
+
+describe("音频图：预览下发", () => {
+  it("逐帧参数下发的过渡时长 = 相邻帧间隔", async () => {
+    const updates: BusUpdate[] = [];
+    const engine = new TimelineEngine({
+      fps: 20,
+      width: 4,
+      height: 4,
+      canvas: { width: 1, height: 1 } as unknown as OffscreenCanvas,
+      headless: true,
+      audioOut: {
+        async begin() {},
+        start: () => ({ stop() {}, setGain() {}, setRate() {} }),
+        setBus(update: BusUpdate) {
+          updates.push(update);
+        },
+        dispose() {},
+      },
+    });
+    engine.setPainter(() => ({
+      data: new Uint8ClampedArray(4 * 4 * 4),
+      width: 4,
+      height: 4,
+    }));
+    const scene = createScene(200, (_prev, env) => {
+      env.bus({ id: "music" });
+      env.audio(clip("pad"), { bus: "music" });
+      env.step(200, (ctx) => {
+        if (ctx.t === 0) ctx.bus("music").gain(0, 100);
+      });
+    });
+    await engine.run(scene, new MemoryFrameSink());
+    const music = updates.filter((u) => u.id === "music" && (u.at ?? 0) > 0);
+    expect(music.length).toBeGreaterThan(0);
+    expect(music[0]!.rampMs).toBeCloseTo(50, 6);
   });
 });
 

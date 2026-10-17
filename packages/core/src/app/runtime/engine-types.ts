@@ -69,6 +69,27 @@ export interface BusParams {
   solo: boolean;
 }
 
+/**
+ * 单参数过渡：回调内 gain/pan 带 rampMs 时登记，逐帧采样时求值。
+ * 起点值取登记时刻的**有效**参数值——过渡未结束时再次登记，从当前插值处重新起坡。
+ */
+export interface ParamRamp {
+  /** 起点时刻（时间线毫秒） */
+  fromMs: Ms;
+  /** 过渡时长（毫秒，> 0） */
+  ms: Ms;
+  /** 起点值（登记时刻的有效值） */
+  from: number;
+  /** 目标值 */
+  to: number;
+}
+
+/** 总线运行期过渡：每个参数至多一条在途过渡 */
+export interface BusRampState {
+  gain?: ParamRamp;
+  pan?: ParamRamp;
+}
+
 /** 引擎可变状态：跨原子单元共享（自由函数显式传参，不散全局） */
 export interface TimelineState {
   opts: EngineOptions;
@@ -88,6 +109,10 @@ export interface TimelineState {
   ducks: Map<string, DuckRule>;
   /** 运行期总线参数当前值 */
   busParams: Map<string, BusParams>;
+  /** 运行期参数过渡（gain/pan 带 rampMs 时登记；逐帧采样时按时刻求值） */
+  busRamps: Map<string, BusRampState>;
+  /** 上一次逐帧参数下发时刻（预览端过渡时长 = 相邻帧间隔） */
+  busFlushAt?: Ms;
   /** 参数轨迹（逐帧采样；program 构建时按时间排序） */
   busPoints: Map<string, BusPoint[]>;
   /** 总线消亡窗口 */

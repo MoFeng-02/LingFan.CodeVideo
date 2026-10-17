@@ -32,6 +32,7 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     sends: new Map(),
     ducks: new Map(),
     busParams: new Map(),
+    busRamps: new Map(),
     busPoints: new Map(),
     busKill: new Map(),
     selfPaced: new Map(),
