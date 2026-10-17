@@ -92,11 +92,14 @@ const act1: Scene<{ title: string }> = start(1000, (env) => {
 
 const act2 = act1.cutTo(2000, (prev, env) => {
   env.spawn(bgScene, { key: "bg", forever: true }); // forever 链：背景跨段保活
-  env.bgm(clip("pad"), { gain: gain(0.55, { fadeIn: 400 }) }); // 循环铺底
+  // 音频图：music 总线承载铺底与节拍，后面的 whoosh 走 fx 总线并侧链压低 music
+  env.bus({ id: "music", gain: 0.9 });
+  env.bgm(clip("pad"), { gain: gain(0.55, { fadeIn: 400 }), bus: "music" }); // 循环铺底
   // 节拍变速：0–600ms 提到 2 倍速（音高随之升高），1000ms 插回原速；
   // 循环铺满整幕——变速只改变「源空间取点速度」，不改变事件寿命。
   env.audio(clip("tick"), {
     gain: gain(0.3),
+    bus: "music",
     loop: loop(),
     rate: warp([0, 0], [600, 1200], [1000, 1600]),
   });
@@ -113,6 +116,8 @@ const act2 = act1.cutTo(2000, (prev, env) => {
       left.setGain(0.15, 200);
       left.setRate(1.4, 200);
       left = null;
+      // 总线参数也能逐帧改：铺底随「现场发起」一起收一点
+      ctx.bus("music").gain(0.5);
     }
     return title(
       ctx,
@@ -124,7 +129,21 @@ const act2 = act1.cutTo(2000, (prev, env) => {
 });
 
 const act3 = act2.cutTo(800, (prev, env) => {
-  env.audio(clip("whoosh"), { at: 0, gain: gain(0.8, { fadeIn: 100 }) });
+  // 侧链：fx 出声时把 music 压 8dB（攻击/释放都是毫秒级，导出可复算）
+  env.bus({ id: "fx" });
+  env.duck({
+    from: "fx",
+    to: "music",
+    amountDb: 8,
+    attackMs: 5,
+    holdMs: 60,
+    releaseMs: 120,
+  });
+  env.audio(clip("whoosh"), {
+    at: 0,
+    bus: "fx",
+    gain: gain(0.8, { fadeIn: 100 }),
+  });
   // 自然退出：把 2s 铺底压缩到 800ms（warp 末锚点 "end"）→ 收在幕边界上
   env.audio(clip("pad"), {
     gain: gain(0.5, { fadeIn: 100, fadeOut: 200 }),

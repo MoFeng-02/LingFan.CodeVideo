@@ -27,6 +27,8 @@ export interface MutableVoice {
   loop: AudioVoice["loop"];
   rate: AudioVoice["rate"];
   ops: AudioOp[];
+  /** 送往哪条总线（缺省 master） */
+  bus?: AudioVoice["bus"];
 }
 
 /** 新建声音记录并登记（id 由引擎序号分配，保证确定性） */

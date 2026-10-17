@@ -4,6 +4,7 @@
  * 实现契约：RenderFn / ValidateFn / ComputeFns。
  */
 import type {
+  AudioGraph,
   ComputeFns,
   ExportResult,
   FrameBitmap,
@@ -150,6 +151,7 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
     options,
     summary.audioVoices,
     summary.durationMs,
+    summary.audioGraph,
   );
   await sink.flushExporter();
   return {
@@ -168,6 +170,7 @@ async function writeAudioTrack(
   options: RenderOptions,
   voices: readonly import("@lingfan-video/contracts").AudioVoice[],
   durationMs: Ms,
+  graph: AudioGraph,
 ): Promise<void> {
   if (voices.length === 0) return;
   if (!options.audio) {
@@ -191,7 +194,7 @@ async function writeAudioTrack(
       { name: "SpecViolation" },
     );
   const clock = options.audio;
-  const samples = await clock.renderProgram({ durationMs, voices });
+  const samples = await clock.renderProgram({ durationMs, voices, graph });
   // 块序列自 0 起连续：按序拼接即整轨，布局取自时钟声明（不猜采样率/声道数）
   for (const s of samples)
     await write.call(exporter, s.data, clock.sampleRate, clock.channels);

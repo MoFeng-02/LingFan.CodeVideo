@@ -7,6 +7,7 @@ import type {
 } from "@lingfan-video/contracts";
 import { StateAggregator } from "../../domain/simulation";
 import type { CompiledUnit, SceneEntry } from "../../domain/simulation/types";
+import { buildAudioGraph, flushBusUpdates } from "./audio-graph";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { buildTimeline } from "./timeline-build";
@@ -27,6 +28,12 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     audioVoices: [],
     voiceSeq: 0,
     onceKeys: new Set<string>(),
+    busSpecs: new Map(),
+    sends: new Map(),
+    ducks: new Map(),
+    busParams: new Map(),
+    busPoints: new Map(),
+    busKill: new Map(),
     form3: new Map(),
     spans: [],
     timelineEnd: 0,
@@ -143,6 +150,7 @@ export class TimelineEngine {
     await this.state.opts.audioOut?.begin({
       durationMs: this.state.timelineEnd,
       voices: this.state.audioVoices,
+      graph: buildAudioGraph(this.state, "timeline"),
     });
     let grid = buildSampleGrid(this.state);
     let idx = 0;
@@ -151,6 +159,7 @@ export class TimelineEngine {
     while (idx < grid.length) {
       const t = grid[idx]!; // 网格点已是毫秒
       this.evaluateFrame(written, t);
+      this.syncBusParams(t);
       await sink.writeFrame(
         this.painterPaint(written, t, this.aggregator.snapshot()),
         written,
@@ -173,6 +182,7 @@ export class TimelineEngine {
       durationMs: this.state.timelineEnd,
       lastState: this.aggregator.full(),
       audioVoices: this.state.audioVoices,
+      audioGraph: buildAudioGraph(this.state, "timeline"),
     };
   }
 
@@ -229,6 +239,13 @@ export class TimelineEngine {
 
   private evaluateFrame(f: FrameIndex, t: Ms): void {
     evaluateFrame(this.deps(), f, t);
+  }
+
+  /** 预览端：把逐帧总线参数同步给实时音频图（无 setBus 的实现忽略） */
+  private syncBusParams(t: Ms): void {
+    const out = this.state.opts.audioOut;
+    if (!out?.setBus) return;
+    for (const u of flushBusUpdates(this.state, t)) out.setBus(u);
   }
 
   private deps(): EvalDeps {

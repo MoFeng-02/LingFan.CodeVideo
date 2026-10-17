@@ -2,6 +2,7 @@ import type { Ms } from "../shared/units";
 import type { Handle, KillOptions, Scheduler } from "../scheduler";
 import type { FrameState } from "../feedback";
 import type { AudioClip, AudioHandle, AudioOptions } from "../audio";
+import type { AudioGraphEnv } from "../audio/graph";
 import type { CanvasEnv, Scene } from "./entities";
 
 /** 运行期音频能力：与 step/loop/spawn 同为上下文方法（能力即上下文，无全局单例） */
@@ -59,7 +60,8 @@ export interface OnceEnv {
   once(scope: OnceScope, fn: OnceFn): void;
 }
 
-export interface StepContext extends CanvasEnv, AudioEnv, Disposal, OnceEnv {
+export interface StepContext
+  extends CanvasEnv, AudioEnv, AudioGraphEnv, Disposal, OnceEnv {
   t: Ms;
   frameIndex: number;
   totalTime: Ms;
@@ -98,7 +100,8 @@ export interface WaitOptions {
  * 若是能画、能开新的产帧路径，「空窗不产帧」的导出优化就失真了。
  * 真正需要画东西的段落用 step（会产帧），不要指望 wait 施舍。
  */
-export interface WaitContext extends AudioEnv, Disposal, OnceEnv {
+export interface WaitContext
+  extends AudioEnv, AudioGraphEnv, Disposal, OnceEnv {
   /** 全局时间线时刻 */
   t: Ms;
   frameIndex: number;
@@ -122,7 +125,8 @@ export interface LoopSpec {
   id?: string;
 }
 
-export interface LoopContext extends CanvasEnv, AudioEnv, Disposal, OnceEnv {
+export interface LoopContext
+  extends CanvasEnv, AudioEnv, AudioGraphEnv, Disposal, OnceEnv {
   parentT: Ms;
   frameIndex: number;
   /** 本单元有效帧率（单元声明 > spawn 链 > 基础） */

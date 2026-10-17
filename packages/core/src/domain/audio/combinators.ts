@@ -221,5 +221,6 @@ export function makeVoice(
     loop: n.loop,
     rate: n.rate,
     ops,
+    bus: options?.bus,
   };
 }

@@ -7,6 +7,7 @@ import type {
   SceneEntry,
   SceneInternal,
 } from "../../domain/simulation/types";
+import { mergeSegmentGraph } from "./audio-graph";
 import { pushVoice } from "./audio-runtime";
 import { makeRenderError } from "./error";
 import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
@@ -20,6 +21,12 @@ export function resetTimeline(state: TimelineState): void {
   state.deadUnits.clear();
   state.dyingUnits.clear();
   state.onceKeys.clear();
+  state.busSpecs.clear();
+  state.sends.clear();
+  state.ducks.clear();
+  state.busParams.clear();
+  state.busPoints.clear();
+  state.busKill.clear();
   state.form3.clear();
   state.timelineEnd = 0;
   state.nowMs = 0;
@@ -43,6 +50,7 @@ export function buildTimeline(state: TimelineState, head: SceneEntry): void {
     prev = seg.bodyResult;
     const end = start + (seg.activeEnd ?? seg.duration);
     state.spans.push({ scene, seg, start, end });
+    mergeSegmentGraph(state, seg);
     expandSpawns(state, seg, start, 0);
     start = end;
     cur = seg.transitionNext
@@ -211,6 +219,7 @@ export function buildChain(
   while (sc && !seen.has(sc.id)) {
     seen.add(sc.id);
     const seg = compileScene(state, sc, prev, chainFps);
+    mergeSegmentGraph(state, seg);
     prev = seg.bodyResult;
     // 链长 = 实际内容：声明池比单元窗口长时按窗口算（空池不算链长）
     const len = contentEndOf(seg);

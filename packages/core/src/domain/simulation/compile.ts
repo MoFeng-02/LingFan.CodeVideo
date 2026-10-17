@@ -1,4 +1,4 @@
-import type { Ms } from "@lingfan-video/contracts";
+import type { BusSpec, DuckRule, Ms, SendSpec } from "@lingfan-video/contracts";
 import type { SceneInternal, SimNode } from "./types";
 import type {
   CompiledAudio,
@@ -30,6 +30,9 @@ export function compileSegment(
   const units: CompiledUnit[] = [];
   const spawns: CompiledSpawn[] = [];
   const audio: CompiledAudio[] = [];
+  const buses: BusSpec[] = [];
+  const sends: SendSpec[] = [];
+  const ducks: DuckRule[] = [];
   let activeEnd: Ms | undefined;
   let transitionNext: unknown;
   let order = 0;
@@ -160,6 +163,18 @@ export function compileSegment(
           });
           break;
         }
+        case "bus": {
+          buses.push(n.spec);
+          break;
+        }
+        case "send": {
+          sends.push(n.spec);
+          break;
+        }
+        case "duck": {
+          ducks.push(n.rule);
+          break;
+        }
       }
     }
     return local;
@@ -172,6 +187,9 @@ export function compileSegment(
     units,
     spawns,
     audio,
+    buses,
+    sends,
+    ducks,
     activeEnd,
     transitionNext,
     bodyResult,

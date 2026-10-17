@@ -1,5 +1,6 @@
 import type { Ms } from "../shared/units";
 import type { AudioClip } from "./entities";
+import type { AudioGraph, BusId, BusPoint } from "./graph";
 
 /**
  * 时间映射锚点：时间线 atMs 处应播放源的 srcMs（均相对声音起点）。
@@ -73,6 +74,8 @@ export interface AudioOptions {
   readonly pan?: AudioPan;
   readonly loop?: AudioLoop;
   readonly rate?: AudioRate;
+  /** 送往哪条总线（缺省 master；总线拓扑与参数见 audio/graph.ts） */
+  readonly bus?: BusId;
 }
 
 /**
@@ -123,12 +126,16 @@ export interface AudioVoice {
   readonly rate: AudioRate | null;
   /** 运行期句柄操作（按时间排序；空 = 无操作） */
   readonly ops: readonly AudioOp[];
+  /** 送往哪条总线（缺省 master） */
+  readonly bus?: BusId;
 }
 
 /** 整条时间线的音频程序：样本 = f(program)（同 program 必同样本） */
 export interface AudioProgram {
   readonly durationMs: Ms;
   readonly voices: readonly AudioVoice[];
+  /** 总线拓扑 + 参数轨迹（缺省 = 全部直连 master，等价旧行为） */
+  readonly graph?: AudioGraph;
 }
 
 /** 解码后的音频资产最小形态（声道布局由实现持有） */
@@ -162,6 +169,19 @@ export interface AudioClock {
   decode(clip: AudioClip): Promise<DecodedAudio>;
 }
 
+/** 预览端总线参数更新：拓扑在 begin 时按 AudioGraph 建立，运行期只能改参数 */
+export interface BusUpdate {
+  readonly id: BusId;
+  readonly gain: number;
+  readonly pan: number;
+  readonly mute: boolean;
+  readonly solo: boolean;
+  /** 过渡时长（毫秒；缺省立即生效） */
+  readonly rampMs?: Ms;
+  /** 目标时刻（时间线毫秒；缺省=现在，仅用于延迟对齐） */
+  readonly at?: BusPoint["atMs"];
+}
+
 /**
  * 音频输出契约（预览端）：实时发声，允许非确定（延迟由平台时钟决定）。
  * begin 锚定时间线起点并预排登记期声音；start 承接运行期发射；
@@ -170,6 +190,8 @@ export interface AudioClock {
 export interface AudioOutput {
   begin(program: AudioProgram): Promise<void>;
   start(voice: AudioVoice): LiveVoice;
+  /** 可选：运行期总线参数更新（不实现 = 预览忽略逐帧总线参数，边界见 15 号 §5.8） */
+  setBus?(update: BusUpdate): void;
   dispose(): void;
 }
 

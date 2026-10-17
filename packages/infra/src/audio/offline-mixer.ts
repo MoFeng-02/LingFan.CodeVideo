@@ -13,6 +13,7 @@ import type {
   DecodedAudio,
   Ms,
 } from "@lingfan-video/contracts";
+import { mixBusGraph } from "./bus-mixer";
 import { evaluateVoice } from "./voice-timeline";
 
 /** 离线解码器：把 clip 变成交错 Float32 PCM（平台适配器注入；Node 测试用合成器替代） */
@@ -55,12 +56,30 @@ export class OfflineAudioMixer implements AudioClock {
       1,
       Math.ceil((program.durationMs / 1000) * this.sampleRate),
     );
-    const out = new Float32Array(frames * this.channels);
     const cache = new Map<string, DecodedPcm>();
-    for (const voice of program.voices) {
-      const pcm = await this.decodeCached(cache, voice.clip);
-      this.layoutVoice(voice, pcm, out, frames, program.durationMs);
+    for (const voice of program.voices)
+      await this.decodeCached(cache, voice.clip);
+    // 无音频图（旧程序）→ 直连 master 的快速路径；有图 → 走总线混音
+    if (!hasGraph(program.graph)) {
+      const out = new Float32Array(frames * this.channels);
+      for (const voice of program.voices) {
+        const pcm = cache.get(voice.clip.url)!;
+        this.layoutVoice(voice, pcm, out, frames, program.durationMs);
+      }
+      return [{ data: out, atMs: 0 }];
     }
+    const out = mixBusGraph({
+      sampleRate: this.sampleRate,
+      channels: this.channels,
+      frames,
+      durationMs: program.durationMs,
+      voices: program.voices,
+      graph: program.graph!,
+      layoutVoice: (voice, target, outFrames, durationMs) => {
+        const pcm = cache.get(voice.clip.url)!;
+        this.layoutVoice(voice, pcm, target, outFrames, durationMs);
+      },
+    });
     return [{ data: out, atMs: 0 }];
   }
 
@@ -87,7 +106,7 @@ export class OfflineAudioMixer implements AudioClock {
   private layoutVoice(
     voice: AudioVoice,
     pcm: DecodedPcm,
-    out: Float32Array,
+    target: Float32Array,
     outFrames: number,
     durationMs: Ms,
   ): void {
@@ -115,10 +134,20 @@ export class OfflineAudioMixer implements AudioClock {
       for (let ch = 0; ch < this.channels; ch++) {
         const s = sampleAt(pcm, s0, frac, ch, srcCh);
         const idx = fr * this.channels + ch;
-        out[idx]! += s * gain * panGain(tl.pan, ch, this.channels);
+        target[idx]! += s * gain * panGain(tl.pan, ch, this.channels);
       }
     }
   }
+}
+
+function hasGraph(graph: AudioProgram["graph"]): boolean {
+  if (!graph) return false;
+  return (
+    graph.buses.length > 0 ||
+    graph.sends.length > 0 ||
+    graph.ducks.length > 0 ||
+    graph.automation.length > 0
+  );
 }
 
 function posMod(v: number, n: number): number {

@@ -1,11 +1,14 @@
 import type {
   AudioClip,
   AudioOptions,
+  BusSpec,
+  DuckRule,
   FrameState,
   LoopContext,
   Ms,
   Scene,
   SceneEnv,
+  SendSpec,
   SetupEnv,
   StepFn,
   WaitContext,
@@ -52,7 +55,10 @@ export type SimNode =
       clip: AudioClip;
       options: AudioOptions;
       anchor: Ms;
-    };
+    }
+  | { kind: "bus"; spec: BusSpec }
+  | { kind: "send"; spec: SendSpec }
+  | { kind: "duck"; rule: DuckRule };
 
 /** 剧本片段运行时形态（Scene 的内部实现：next 由 cutTo/transitionTo 写入） */
 export interface SceneInternal<P = unknown> {
@@ -136,6 +142,10 @@ export interface CompiledSegment {
   units: CompiledUnit[];
   spawns: CompiledSpawn[];
   audio: CompiledAudio[];
+  /** 登记期音频图拓扑（段内声明；runtime 汇总成全时间线图） */
+  buses: BusSpec[];
+  sends: SendSpec[];
+  ducks: DuckRule[];
   /** transitionTo 提前收窗（其后节点不活跃）；undefined = 跑满 duration */
   activeEnd?: Ms;
   /** transitionTo 的目标片段（由 compile 从节点流透出，runtime 链式推进用） */

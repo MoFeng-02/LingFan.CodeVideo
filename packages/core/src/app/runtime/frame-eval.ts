@@ -1,5 +1,6 @@
 import type {
   AudioClip,
+  AudioGraphEnv,
   AudioHandle,
   AudioOptions,
   FrameIndex,
@@ -16,6 +17,14 @@ import type {
   CompiledUnit,
   SceneInternal,
 } from "../../domain/simulation/types";
+import {
+  ensureBusParams,
+  ensureBusSpec,
+  makeBusHandle,
+  registerDuck,
+  registerSend,
+  sampleBuses,
+} from "./audio-graph";
 import { emitAudio } from "./audio-runtime";
 import { makeRenderError } from "./error";
 import type { ChainSpan, EvalDeps, SpawnChain } from "./engine-types";
@@ -161,6 +170,7 @@ export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
         );
     }
   }
+  sampleBuses(deps, t);
 }
 
 /**
@@ -188,6 +198,20 @@ function invoke(
   } finally {
     state.inCallback = false;
   }
+}
+
+/** 运行期音频图能力（bus 句柄 / send / duck；与 audio 同一注入面） */
+function graphOf(deps: EvalDeps, t: Ms): AudioGraphEnv {
+  void t;
+  return {
+    bus: (id, spec) => {
+      if (spec) ensureBusSpec(deps.state, id, spec);
+      ensureBusParams(deps.state, id);
+      return makeBusHandle(deps, id);
+    },
+    send: (spec) => registerSend(deps.state, spec),
+    duck: (rule) => registerDuck(deps.state, rule),
+  };
 }
 
 /** 运行期音频能力（能力即上下文：与 spawn/scheduler 同一注入面） */
@@ -280,6 +304,7 @@ function evalStep(
       dynamicSpawn(deps, scene as SceneInternal<unknown>, options, t, chain),
     scheduler: schedulerFacade(deps.state, t),
     audio: audioOf(deps, t),
+    ...graphOf(deps, t),
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),
@@ -321,6 +346,7 @@ function evalLoopIter(
       dynamicSpawn(deps, scene as SceneInternal<unknown>, options, t, chain),
     scheduler: schedulerFacade(deps.state, t),
     audio: audioOf(deps, t),
+    ...graphOf(deps, t),
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),
@@ -353,6 +379,7 @@ function evalWait(
     progress: duration > 0 ? localIn / duration : 0,
     scheduler: schedulerFacade(deps.state, t),
     audio: audioOf(deps, t),
+    ...graphOf(deps, t),
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),
@@ -409,6 +436,7 @@ function evalForm3(
       dynamicSpawn(deps, scene as SceneInternal<unknown>, options, t, chain),
     scheduler: schedulerFacade(deps.state, t),
     audio: audioOf(deps, t),
+    ...graphOf(deps, t),
     disposing: disp.disposing,
     disposeProgress: disp.progress,
     dispose: selfDisposeOf(deps, t, hostKey),

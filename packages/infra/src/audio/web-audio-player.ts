@@ -5,12 +5,17 @@
  * 仅浏览器环境可用（AudioContext 为平台 API）；Node 下不要装配。
  */
 import type {
+  AudioGraph,
   AudioOutput,
   AudioProgram,
   AudioVoice,
+  BusId,
+  BusSpec,
+  BusUpdate,
   LiveVoice,
   Ms,
 } from "@lingfan-video/contracts";
+import { MASTER_BUS } from "@lingfan-video/contracts";
 import { rateSegments, resolveWarp } from "./warp";
 import { evaluateVoice } from "./voice-timeline";
 
@@ -20,11 +25,21 @@ export type AudioBufferLoader = (url: string) => Promise<AudioBuffer>;
 /** 预排提前量（秒）：给加载与调度留余量，避免起点被吞 */
 const SCHEDULE_LEAD_SEC = 0.06;
 
+interface BusNode {
+  spec: BusSpec;
+  input: GainNode;
+  gain: GainNode;
+  panner: StereoPannerNode | null;
+  tail: AudioNode;
+}
+
 export class WebAudioOutput implements AudioOutput {
   private readonly nodes: AudioBufferSourceNode[] = [];
   private readonly loaded = new Map<string, Promise<AudioBuffer>>();
   private startedAtSec = 0;
   private programDurationMs = 0;
+  private readonly buses = new Map<BusId, BusNode>();
+  private readonly busParams = new Map<BusId, BusUpdate>();
 
   constructor(
     private readonly ctx: AudioContext,
@@ -36,6 +51,7 @@ export class WebAudioOutput implements AudioOutput {
     this.dispose();
     this.startedAtSec = this.ctx.currentTime + SCHEDULE_LEAD_SEC;
     this.programDurationMs = program.durationMs;
+    this.buildBuses(program.graph);
     await Promise.all(program.voices.map((v) => this.bufferOf(v.clip.url)));
     for (const voice of program.voices) this.schedule(voice);
   }
@@ -57,6 +73,133 @@ export class WebAudioOutput implements AudioOutput {
       } catch {
         // 未开始的节点 stop 抛 InvalidStateError，忽略
       }
+    }
+    for (const bus of this.buses.values()) {
+      try {
+        bus.input.disconnect();
+        bus.gain.disconnect();
+        bus.panner?.disconnect();
+      } catch {
+        // 已断开
+      }
+    }
+    this.buses.clear();
+    this.busParams.clear();
+  }
+
+  /** 运行期总线参数更新：gain/pan 直接改节点，mute = gain 归零；solo 由重算统一处理 */
+  setBus(update: BusUpdate): void {
+    const bus = this.buses.get(update.id);
+    if (!bus) return;
+    this.busParams.set(update.id, update);
+    this.applyBusParams(update.id, update.rampMs ?? 0);
+  }
+
+  /** 按 program.graph 建总线节点图（拓扑固定；缺省 = 声音直连 destination） */
+  private buildBuses(graph: AudioGraph | undefined): void {
+    const specs = new Map<BusId, BusSpec & { parent?: BusId }>();
+    specs.set(MASTER_BUS, { id: MASTER_BUS });
+    for (const b of graph?.buses ?? []) specs.set(b.id, b);
+    for (const [id, spec] of specs) {
+      const input = this.ctx.createGain();
+      const gain = this.ctx.createGain();
+      const panner = id === MASTER_BUS ? null : this.ctx.createStereoPanner();
+      let tail: AudioNode = input;
+      for (const eff of spec.effects ?? []) {
+        if (eff.kind === "filter") {
+          const filter = this.ctx.createBiquadFilter();
+          filter.type =
+            eff.type === "lowpass"
+              ? "lowpass"
+              : eff.type === "highpass"
+                ? "highpass"
+                : "bandpass";
+          filter.frequency.value = eff.frequency;
+          filter.Q.value = eff.q ?? Math.SQRT1_2;
+          tail.connect(filter);
+          tail = filter;
+        } else {
+          const comp = this.ctx.createDynamicsCompressor();
+          comp.threshold.value = eff.thresholdDb;
+          comp.ratio.value = eff.ratio;
+          comp.attack.value = eff.attackMs / 1000;
+          comp.release.value = eff.releaseMs / 1000;
+          comp.knee.value = eff.kneeDb ?? 6;
+          tail.connect(comp);
+          tail = comp;
+        }
+      }
+      tail.connect(gain);
+      let out: AudioNode = gain;
+      if (panner) {
+        gain.connect(panner);
+        out = panner;
+      }
+      this.buses.set(id, { spec, input, gain, panner, tail: out });
+      const p = {
+        id,
+        gain: spec.gain ?? 1,
+        pan: spec.pan ?? 0,
+        mute: spec.mute ?? false,
+        solo: spec.solo ?? false,
+      };
+      this.busParams.set(id, p);
+    }
+    // 父链接线（父总线的效果输入即子总线的汇入点）
+    for (const [id, bus] of this.buses) {
+      if (id === MASTER_BUS) {
+        bus.tail.connect(this.ctx.destination);
+        continue;
+      }
+      const parentId =
+        bus.spec.parent && this.buses.has(bus.spec.parent)
+          ? bus.spec.parent
+          : MASTER_BUS;
+      bus.tail.connect(this.buses.get(parentId)!.input);
+    }
+    // 发送（预览端用节点直接实现，与导出端语义一致）
+    for (const send of graph?.sends ?? []) {
+      const from = this.buses.get(send.from);
+      const to = this.buses.get(send.to);
+      if (!from || !to) continue;
+      const amount = this.ctx.createGain();
+      amount.gain.value = send.pre ? send.amount : send.amount;
+      from.tail.connect(amount);
+      amount.connect(to.input);
+    }
+    for (const b of this.buses.keys()) this.applyBusParams(b, 0);
+  }
+
+  /** 计算并应用单总线有效参数（solo 期间未 solo 的总线静音；master 不受 solo 影响） */
+  private applyBusParams(id: BusId, rampMs: number): void {
+    const bus = this.buses.get(id);
+    if (!bus) return;
+    const p = this.busParams.get(id);
+    if (!p) return;
+    const soloActive = [...this.busParams.entries()].some(
+      ([b, v]) => b !== MASTER_BUS && v.solo,
+    );
+    const muted = p.mute || (soloActive && !p.solo && id !== MASTER_BUS);
+    const target = muted ? 0 : p.gain;
+    const when = Math.max(this.ctx.currentTime, this.ctxSecOf(this.nowMs()));
+    const param = bus.gain.gain;
+    // 测试替身可能只实现 setValueAtTime/linearRamp（无 cancelScheduledValues）——可选调用
+    if (typeof param.cancelScheduledValues === "function")
+      param.cancelScheduledValues(when);
+    param.setValueAtTime(param.value, when);
+    if (rampMs > 0) param.linearRampToValueAtTime(target, when + rampMs / 1000);
+    else param.setValueAtTime(target, when);
+    if (bus.panner) {
+      const pan = bus.panner.pan;
+      if (typeof pan.cancelScheduledValues === "function")
+        pan.cancelScheduledValues(when);
+      pan.setValueAtTime(pan.value, when);
+      if (rampMs > 0)
+        pan.linearRampToValueAtTime(
+          Math.max(-1, Math.min(1, p.pan)),
+          when + rampMs / 1000,
+        );
+      else pan.setValueAtTime(Math.max(-1, Math.min(1, p.pan)), when);
     }
   }
 
@@ -116,7 +259,11 @@ export class WebAudioOutput implements AudioOutput {
           tail = panner;
         }
         src.connect(gain);
-        tail.connect(this.ctx.destination);
+        const targetBus =
+          (voice.bus && this.buses.get(voice.bus)?.input) ||
+          this.buses.get(MASTER_BUS)?.input ||
+          this.ctx.destination;
+        tail.connect(targetBus);
         src.start(
           Math.max(start, this.ctx.currentTime),
           Math.max(0, tl.sourceMsAt(tl.startMs) / 1000),

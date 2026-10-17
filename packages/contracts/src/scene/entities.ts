@@ -1,6 +1,12 @@
 import type { Ms } from "../shared/units";
 import type { Handle, SpawnOptions } from "../scheduler";
-import type { AudioClip, AudioOptions } from "../audio";
+import type {
+  AudioClip,
+  AudioOptions,
+  BusSpec,
+  DuckRule,
+  SendSpec,
+} from "../audio";
 import type {
   LoopSpec,
   StepFn,
@@ -48,6 +54,15 @@ export interface SceneEnv extends CanvasEnv {
   audio(clip: AudioClip, options?: AudioOptions): void;
   /** bgm 糖：缺省循环到时间线尾（显式 loop 可覆盖） */
   bgm(clip: AudioClip, options?: Omit<AudioOptions, "loop">): void;
+  /**
+   * 登记期总线拓扑：建 bus、挂父总线下；重复登记同 id = 覆盖规格（最后声明为准）。
+   * 拓扑（父子关系）只在这里定；运行期走 ctx.bus(id) 改参数。
+   */
+  bus(spec: BusSpec): void;
+  /** 登记一条发送（from → to，amount 静音比例） */
+  send(spec: SendSpec): void;
+  /** 登记一条侧链压制（from 起声时压低 to；确定性 DSP 在混音器里跑） */
+  duck(rule: DuckRule): void;
 }
 
 /** setup 阶段环境：资产解码同位进 setup；run 阶段拿不到 assets */

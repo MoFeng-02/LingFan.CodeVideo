@@ -1,10 +1,13 @@
 import type {
   AudioClip,
   AudioOptions,
+  BusSpec,
+  DuckRule,
   LoopSpec,
   Ms,
   Scene,
   SceneEnv,
+  SendSpec,
   SpawnOptions,
   StepFn,
   StepOptions,
@@ -160,6 +163,19 @@ export class Recorder implements SceneEnv {
   bgm(clip: AudioClip, options?: Omit<AudioOptions, "loop">): void {
     // bgm 糖：循环到时间线尾（要定制循环区间请用 audio + loop(untilMs)）
     this.audio(clip, { ...options, loop: loopUntil() });
+  }
+
+  bus(spec: BusSpec): void {
+    // 拓扑登记：不推进 cursor（与 audio 同为声明，不占帧窗池）
+    this.nodes.push({ kind: "bus", spec });
+  }
+
+  send(spec: SendSpec): void {
+    this.nodes.push({ kind: "send", spec });
+  }
+
+  duck(rule: DuckRule): void {
+    this.nodes.push({ kind: "duck", rule });
   }
 }
 

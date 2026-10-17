@@ -1,11 +1,16 @@
 import type {
   AssetSource,
+  AudioGraph,
   AudioOutput,
   AudioVoice,
+  BusPoint,
+  BusSpec,
+  DuckRule,
   FrameBitmap,
   FrameIndex,
   FrameState,
   Ms,
+  SendSpec,
 } from "@lingfan-video/contracts";
 import type {
   CompiledSegment,
@@ -52,6 +57,16 @@ export interface RunSummary {
   lastState: FrameState;
   /** 全时间线声音记录（登记期声明 + 运行期发射；导出端据此离线渲染） */
   audioVoices: readonly AudioVoice[];
+  /** 全时间线音频图（总线拓扑 + 参数轨迹；导出端离线混音用） */
+  audioGraph: AudioGraph;
+}
+
+/** 运行期总线参数（句柄改动的当前值；未登记 = master 直连） */
+export interface BusParams {
+  gain: number;
+  pan: number;
+  mute: boolean;
+  solo: boolean;
 }
 
 /** 引擎可变状态：跨原子单元共享（自由函数显式传参，不散全局） */
@@ -67,6 +82,16 @@ export interface TimelineState {
   voiceSeq: number;
   /** B3 事件去重登记（确定性键：作用域 + 单元实例 + 迭代/实例 id） */
   onceKeys: Set<string>;
+  /** 音频图拓扑（登记期声明；同 id / 同 from→to 覆盖） */
+  busSpecs: Map<string, BusSpec>;
+  sends: Map<string, SendSpec>;
+  ducks: Map<string, DuckRule>;
+  /** 运行期总线参数当前值 */
+  busParams: Map<string, BusParams>;
+  /** 参数轨迹（逐帧采样；program 构建时按时间排序） */
+  busPoints: Map<string, BusPoint[]>;
+  /** 总线消亡窗口 */
+  busKill: Map<string, { from: Ms; until: Ms }>;
   form3: Map<string, { iteration: number; iterStart: Ms }>;
   spans: ChainSpan[];
   timelineEnd: Ms;
