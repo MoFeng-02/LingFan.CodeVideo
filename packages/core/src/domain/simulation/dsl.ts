@@ -8,6 +8,8 @@ import type {
   SpawnOptions,
   StepFn,
   StepOptions,
+  WaitFn,
+  WaitOptions,
 } from "@lingfan-video/contracts";
 import { loop as loopUntil } from "../audio";
 import type { SceneInternal, SimNode } from "./types";
@@ -135,8 +137,8 @@ export class Recorder implements SceneEnv {
     };
   }
 
-  wait(duration: Ms): void {
-    this.nodes.push({ kind: "wait", duration });
+  wait(duration: Ms, onUpdate?: WaitFn, options?: WaitOptions): void {
+    this.nodes.push({ kind: "wait", duration, onUpdate, id: options?.id });
     this.cursor += duration;
   }
 

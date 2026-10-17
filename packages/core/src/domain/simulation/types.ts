@@ -8,6 +8,8 @@ import type {
   SceneEnv,
   SetupEnv,
   StepFn,
+  WaitContext,
+  WaitFn,
 } from "@lingfan-video/contracts";
 
 /** 登记期节点树（SceneEnv 回调捕获的中间表示） */
@@ -22,7 +24,7 @@ export type SimNode =
       fps?: number;
       id?: string;
     }
-  | { kind: "wait"; duration: Ms }
+  | { kind: "wait"; duration: Ms; onUpdate?: WaitFn; id?: string }
   | {
       kind: "loop";
       ms?: Ms;
@@ -93,6 +95,11 @@ export interface CompiledUnit {
   fps: number;
   /** 回调入参：step 收 StepContext、loop 迭代收 LoopContext（由 runtime 组装） */
   call: (ctx: unknown) => FrameState | void;
+  /**
+   * wait 回调单元（B1）：**不产帧**，只在「其他单元产帧的网格点」上被调用；
+   * 出现该字段 = 本单元不贡献采样网格。`call` 为其占位（不发 FrameState）。
+   */
+  onUpdate?: (ctx: WaitContext) => void;
   /** loop 迭代元数据（step 无） */
   loop?: { iteration: number; iterationMs?: Ms };
   /** loop 单元的宿主锚点（`loop#N`；stop() 按宿主杀全迭代） */

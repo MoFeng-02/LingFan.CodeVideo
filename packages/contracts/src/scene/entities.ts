@@ -1,7 +1,13 @@
 import type { Ms } from "../shared/units";
 import type { Handle, SpawnOptions } from "../scheduler";
 import type { AudioClip, AudioOptions } from "../audio";
-import type { LoopSpec, StepFn, StepOptions } from "./nodes";
+import type {
+  LoopSpec,
+  StepFn,
+  StepOptions,
+  WaitFn,
+  WaitOptions,
+} from "./nodes";
 
 /** 帧号换算糖：f(n) = n × (1000 / 单元有效帧率)——单元内语义，跨单元不可比 */
 export type FrameFn = (frameNumber: number) => Ms;
@@ -32,7 +38,8 @@ export interface SceneEnv extends CanvasEnv {
   par(children: Array<(branch: SceneEnv) => void>): void;
   /** key 必填（同 key 去重 = 跨段续接） */
   spawn<S>(scene: Scene<S>, options: SpawnOptions): Handle;
-  wait(duration: Ms): void;
+  /** 纯时间推进（自身不产帧）；给 onUpdate 则「有帧时逐帧回调」，见 15 号 §2 */
+  wait(duration: Ms, onUpdate?: WaitFn, options?: WaitOptions): void;
   transitionTo(next: Scene<unknown>): void;
   /**
    * 登记期音频声明：起点 = 登记位置 + at；不消耗帧窗池、不改 step 模型。

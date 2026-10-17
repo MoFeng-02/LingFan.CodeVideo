@@ -7,6 +7,9 @@ import type {
   CompiledUnit,
 } from "./types";
 
+/** wait 单元的 call 占位（wait 不发布 FrameState，回调走 onUpdate） */
+const NOOP: CompiledUnit["call"] = () => {};
+
 /**
  * 单段编译：把登记流（Recorder.nodes）展平为绝对时间单元。
  * 规则：
@@ -55,6 +58,20 @@ export function compileSegment(
           break;
         }
         case "wait": {
+          if (n.onUpdate) {
+            // wait 回调单元：不产帧（采样网格跳过它），只在其他单元产帧的网格点上被调用
+            units.push({
+              key: `wait#${order}`,
+              windowStart: local,
+              windowEnd: local + n.duration,
+              hold: false,
+              fps: effFps(), // 不产帧，仅占位（网格构建时按 onUpdate 跳过）
+              call: NOOP,
+              onUpdate: n.onUpdate,
+              disposeId: n.id,
+              order: order++,
+            });
+          }
           local += n.duration;
           break;
         }

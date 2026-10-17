@@ -61,6 +61,33 @@ export type SpawnOptionsLike = {
   fps?: number;
 };
 
+/** wait 回调：不产帧，只在「同一时刻有别的活跃单元在产帧」的网格点上被调用 */
+export type WaitFn = (ctx: WaitContext) => void;
+
+/** wait 选项：可消杀名（与 step/loop 同一套具名消杀） */
+export interface WaitOptions {
+  id?: string;
+}
+
+/**
+ * wait 回调上下文（B1）。
+ * 能力集刻意**不含** canvas / step / loop / spawn / par：这段不产帧，
+ * 若是能画、能开新的产帧路径，「空窗不产帧」的导出优化就失真了。
+ * 真正需要画东西的段落用 step（会产帧），不要指望 wait 施舍。
+ */
+export interface WaitContext extends AudioEnv, Disposal {
+  /** 全局时间线时刻 */
+  t: Ms;
+  frameIndex: number;
+  totalTime: Ms;
+  /** wait 窗内偏移 */
+  localT: Ms;
+  duration: Ms;
+  /** 0..1，= localT / duration */
+  progress: number;
+  scheduler: Scheduler;
+}
+
 /** loop 统一对象参数：省略 ms = 无固定迭代窗（fn 自管 next()/stop() 推进节奏） */
 export interface LoopSpec {
   ms?: Ms;

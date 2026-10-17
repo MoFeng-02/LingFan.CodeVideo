@@ -56,6 +56,7 @@ tests/               集中式单元/端到端测试，不是包
 - **音频是运行期的能力，不是一条音轨**：`ctx.audio(clip, opts)` 在任意 step/loop 回调里发声并拿到 `AudioHandle{stop, setGain, setRate}`——可共生（随状态收声）、可独美（自由发射）、可贯穿全局；引擎不因幕/段边界自动杀声音，唯一自动终界是总时间线尾。登记期用 `env.audio/env.bgm` 做声明。
 - **音频强类型**：`clip()` 是唯一音源构造入口（brand 类型）；音量/摆位/循环/变速是组合子（`gain/pan/loop/rate/warp`）并在构造期校验，非法组合立刻 `spec_violation`，不等到渲染才炸。
 - **音频不占时间**：发声不推进时间池、不产帧；需要「只有声音的段落」用 `wait(ms)`。
+- **静默段也能有运行期逻辑**：`wait(ms, onUpdate?)` 自身不产帧，但在「同帧有别的单元产帧」的网格点上逐帧回调（回调能力集只含声音/消杀/时间，不含 `step/loop/par/spawn`）；整段纯空窗时零回调是已知边界，要这段真有逻辑就用 `step`。运行期 `ctx.audio({ at })` 的 `at` 是**相对发射时刻的延迟**（「300ms 后响」），登记期 `env.audio({ at })` 才是相对登记位置——两条语义并存，不混用。
 - **音频变速**：`warp` 分段线性时间映射——突然加速/恢复/不恢复、`srcMs:"end"` 自动填满区间、踩点；变速即变调（磁带式）。求值只有一处（`infra/audio/voice-timeline.ts`）：导出逐样本、预览转 AudioParam 自动化。
 - **画什么就采什么**：视频的像素事实来源是绘制目标本身——step 回调画在 `ctx.canvas` 上，导出时引擎逐帧从该画布回读（`getImageData`）；GPU/离屏路径注入 `RenderOptions.painter`。不存在第二份像素来源，也不会静默交空白帧：两者都没有时缺省 `spec_violation`（首帧取像素时报），真要占位位图必须显式 `frames:"allow-blank"`。
 - **导出 mp4 自带音轨**：`WebCodecsExporter` 用 H.264 + AAC-LC 编码并自封装 mp4，声音走 `OfflineAudioMixer`（与预览同一份合成公式/求值点）；组合根顺序是「帧 → 声 → finalize」，有声音却没音轨出口会直接 `spec_violation`，不静默丢声。浏览器示例点「导出 MP4」即可下载（`pnpm dev`）。
@@ -65,7 +66,7 @@ tests/               集中式单元/端到端测试，不是包
 ## 文档
 
 - 规约索引：[私有文档/CodeVideo规约/README.md](私有文档/CodeVideo规约/README.md)
-- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟、§9.13 消杀与消亡过程、§9.14 帧来源缺失显式化）
+- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟、§9.13 消杀与消亡过程、§9.14 帧来源缺失显式化、§9.15 `wait` 回调与运行期音频延迟）
 - 契约设计规则：[13 号](私有文档/CodeVideo规约/13-contract-design.md)
 - 目录规划：[14 号](私有文档/CodeVideo规约/14-directory-plan.md)
 - B 阶段设计与裁决（游戏判据、wait 回调、事件去重、音频图 bus/sends/ducking）：[15 号](私有文档/CodeVideo规约/15-audio-graph-and-play-semantics.md)

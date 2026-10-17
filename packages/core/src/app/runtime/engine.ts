@@ -59,6 +59,8 @@ export function buildSampleGrid(state: TimelineState): Ms[] {
   const walkSpans = (spans: EvalDeps["state"]["spans"]): void => {
     for (const span of spans) {
       for (const u of span.seg.units) {
+        // wait 回调单元不贡献采样点（B1：自身不产帧）
+        if (u.onUpdate) continue;
         if (u.loop && u.loop.iterationMs === undefined) {
           // form-3：自管节奏——采样点沿基础帧率推进（自管单元没有固定网格）
           const s = span.start + u.windowStart;
@@ -94,6 +96,7 @@ export function buildSampleGrid(state: TimelineState): Ms[] {
               end: span.end + k * contentLen,
             };
             for (const u of span.seg.units) {
+              if (u.onUpdate) continue; // wait 回调单元不贡献采样点
               if (u.loop && u.loop.iterationMs === undefined) continue; // form-3 简化：循环圈内沿基础网格
               addUnit(u, shifted.start, shifted.end);
             }

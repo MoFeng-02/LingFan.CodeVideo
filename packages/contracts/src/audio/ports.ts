@@ -45,7 +45,11 @@ export type AudioRate =
  * 不再是一袋可选原始数字——写错单位/把相邻概念混用会在构造处暴露。
  */
 export interface AudioOptions {
-  /** 相对所在登记位置的偏移（毫秒） */
+  /**
+   * 起播偏移（毫秒），两种发射语义不同：
+   * - 登记期 `env.audio` / `bgm`：相对**登记位置**；
+   * - 运行期 `ctx.audio`：相对**发射时刻**的延迟（B2，负值按 0）。
+   */
   readonly at?: Ms;
   readonly gain?: AudioGain;
   readonly pan?: AudioPan;

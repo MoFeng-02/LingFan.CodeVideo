@@ -7,6 +7,7 @@ import type {
   Ms,
   RenderError,
   StepContext,
+  WaitContext,
 } from "@lingfan-video/contracts";
 import type {
   CompiledUnit,
@@ -107,7 +108,18 @@ export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
       }
       const disp =
         unitDisposal(deps, [...new Set([deadKey, hostKey])], t) ?? chainDisp;
-      if (unit.loop && unit.loop.iterationMs === undefined)
+      if (unit.onUpdate)
+        evalWait(
+          deps,
+          span,
+          unit,
+          f,
+          t,
+          localT - unit.windowStart,
+          hostKey,
+          disp,
+        );
+      else if (unit.loop && unit.loop.iterationMs === undefined)
         evalForm3(
           deps,
           span,
@@ -268,6 +280,44 @@ function evalLoopIter(
     dispose: selfDisposeOf(deps, t, hostKey),
   };
   invoke(deps, span, unit, ctx, t);
+}
+
+/**
+ * wait 回调单元（B1）：自身不产帧，只在其他单元产帧的网格点上被调用。
+ * 能力集刻意不含画布与产帧原语——见 contracts WaitContext。
+ */
+function evalWait(
+  deps: EvalDeps,
+  span: ChainSpan,
+  unit: CompiledUnit,
+  f: FrameIndex,
+  t: Ms,
+  localIn: Ms,
+  hostKey: string,
+  disp: DisposalInfo,
+): void {
+  const duration = unit.windowEnd - unit.windowStart;
+  const ctx: WaitContext = {
+    t,
+    frameIndex: f,
+    totalTime: deps.state.timelineEnd,
+    localT: localIn,
+    duration,
+    progress: duration > 0 ? localIn / duration : 0,
+    scheduler: schedulerFacade(deps.state, t),
+    audio: audioOf(deps, t),
+    disposing: disp.disposing,
+    disposeProgress: disp.progress,
+    dispose: selfDisposeOf(deps, t, hostKey),
+  };
+  deps.state.inCallback = true;
+  try {
+    unit.onUpdate!(ctx);
+  } catch (e) {
+    wrapThrow(e, span.scene.id, t, `wait（${unit.key}）`);
+  } finally {
+    deps.state.inCallback = false;
+  }
 }
 
 /** loop 无固定迭代窗（自管节奏）：逐帧活跃，ctx.next() 推进 iteration、stop() 终止 */

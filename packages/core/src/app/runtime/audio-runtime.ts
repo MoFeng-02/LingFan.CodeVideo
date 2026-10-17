@@ -59,7 +59,10 @@ export function emitAudio(
   atMs: Ms,
 ): AudioHandle {
   const { state } = deps;
-  const voice = pushVoice(state, clip, atMs, options);
+  // B2：运行期 `at` = 相对发射时刻的延迟（登记期语义 = 相对登记位置，见 compile）
+  const delay = Math.max(0, options?.at ?? 0);
+  const startMs = Math.max(0, atMs + delay);
+  const voice = pushVoice(state, clip, startMs, options);
   const live = state.opts.audioOut?.start(voice);
   let stopped = false;
 
@@ -75,7 +78,7 @@ export function emitAudio(
 
   return {
     id: voice.id,
-    startedAtMs: atMs,
+    startedAtMs: startMs,
     get alive(): boolean {
       return !stopped && state.nowMs < state.timelineEnd;
     },
