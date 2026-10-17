@@ -2,6 +2,7 @@ import type { Ms } from "@lingfan-video/contracts";
 import { compileSegment } from "../../domain/simulation";
 import { Recorder } from "../../domain/simulation/dsl";
 import type {
+  CompiledAudio,
   CompiledSegment,
   SceneInternal,
 } from "../../domain/simulation/types";
@@ -12,6 +13,7 @@ import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
 export function resetTimeline(state: TimelineState): void {
   state.spans = [];
   state.spawnChains.length = 0;
+  state.audioEvents.length = 0;
   state.deadUnits.clear();
   state.form3.clear();
   state.timelineEnd = 0;
@@ -45,6 +47,37 @@ export function buildTimeline(
   // forever spawn 寿命 = 总链尾：链收集完后再夹取
   for (const c of state.spawnChains)
     if (c.end === Infinity) c.end = state.timelineEnd;
+  collectAudioEvents(state);
+}
+
+/** 全时间线音频事件收集：span 相对锚点 → 全局绝对；forever 链按循环圈数展开 */
+function collectAudioEvents(state: TimelineState): void {
+  const push = (seg: CompiledSegment, spanStart: Ms, spanEnd: Ms): void => {
+    for (const a of seg.audio) {
+      const at = spanStart + a.atMs;
+      if (at >= spanEnd) continue; // 锚点已收窗外（transition 短路等）不响
+      state.audioEvents.push({ ...a, globalAtMs: at });
+    }
+  };
+  const walkSpans = (spans: ChainSpan[]): void => {
+    for (const span of spans) push(span.seg, span.start, span.end);
+  };
+  for (const c of state.spawnChains) {
+    if (c.killed) continue;
+    walkSpans(c.spans);
+    const last = c.spans[c.spans.length - 1];
+    const contentLen = last ? last.end - c.start : 0;
+    if (contentLen > 0 && c.end - c.start > contentLen) {
+      // forever 循环重放：音频事件按圈数平移展开（与画面回卷同相位）
+      const loops = Math.ceil((c.end - c.start) / contentLen);
+      for (let k = 1; k < loops; k++)
+        for (const span of c.spans) {
+          const at = span.start + k * contentLen;
+          push(span.seg, at, span.end + k * contentLen);
+        }
+    }
+  }
+  walkSpans(state.spans);
 }
 
 /** 编译单段：先跑 setup（资产/解码只跑一次）再跑 body 捕获节点流（每次出现都跑——prev 依出现上下文，不能按 id 缓存） */
@@ -175,4 +208,19 @@ export function buildChain(
 /** span 活跃判定：t 落在 [start,end) 内 */
 export function findSpan(spans: ChainSpan[], t: Ms): ChainSpan | undefined {
   return spans.find((s) => t >= s.start && t < s.end);
+}
+
+/** forever 链 span 查找：t 超出内容总长后按链内容时长取模回卷（循环重放） */
+export function findSpanLooping(
+  chain: SpawnChain,
+  t: Ms,
+): ChainSpan | undefined {
+  const span = findSpan(chain.spans, t);
+  if (span) return span;
+  const last = chain.spans[chain.spans.length - 1];
+  if (!last) return undefined;
+  const contentLen = last.end - chain.start;
+  if (!(contentLen > 0)) return undefined;
+  const local = (t - chain.start) % contentLen;
+  return findSpan(chain.spans, chain.start + local);
 }

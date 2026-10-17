@@ -140,6 +140,8 @@ export function compileSegment(
             fadeIn: o.fadeIn,
             fadeOut: o.fadeOut,
             loop: o.loop ?? false,
+            channels: o.channels,
+            pan: o.pan ?? 0,
           });
           break;
         }

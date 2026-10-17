@@ -6,3 +6,11 @@ export { FrameSequenceExporter } from "./export/frame-sequence-exporter";
 export { WebCodecsExporter } from "./export/webcodecs-exporter";
 export type { WebCodecsExporterOptions } from "./export/webcodecs-exporter";
 export { MemoryFrameSink } from "./capture/memory-sink";
+export { OfflineAudioMixer } from "./audio/offline-mixer";
+export type {
+  AudioDecoder,
+  DecodedPcm,
+  OfflineAudioMixerOptions,
+} from "./audio/offline-mixer";
+export { WebAudioPlayer } from "./audio/web-audio-player";
+export type { AudioBufferLoader } from "./audio/web-audio-player";

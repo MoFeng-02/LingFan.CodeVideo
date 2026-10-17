@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Code Video · 浏览器实时预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #101014;
+        color: #d8d8e0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
+        color: #9aa0ff;
+      }
+      canvas {
+        border: 1px solid #2a2a35;
+        border-radius: 8px;
+        background: #000;
+      }
+      #hud {
+        font-size: 13px;
+        color: #8a8a99;
+        font-variant-numeric: tabular-nums;
+        min-height: 1.2em;
+      }
+      button {
+        padding: 8px 22px;
+        font-size: 14px;
+        border: 1px solid #3a3a4a;
+        border-radius: 6px;
+        background: #1c1c26;
+        color: #d8d8e0;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #26263a;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Code Video · 三幕剧本实时预览</h1>
+    <canvas id="stage" width="640" height="360"></canvas>
+    <div id="hud">按「播放」开始</div>
+    <button id="play">▶ 播放</button>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

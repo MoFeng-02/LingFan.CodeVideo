@@ -50,6 +50,8 @@ export type SimNode =
         fadeIn?: Ms;
         fadeOut?: Ms;
         loop?: boolean;
+        channels?: number;
+        pan?: number;
       };
       anchor: Ms;
     };
@@ -110,6 +112,10 @@ export interface CompiledAudio {
   fadeIn?: Ms;
   fadeOut?: Ms;
   loop: boolean;
+  /** 目标声道数（undefined = 跟随源声道布局） */
+  channels?: number;
+  /** 立体声摆位 -1~1（缺省 0 居中） */
+  pan: number;
 }
 
 /** 单段编译结果（衔接下一片段由 runtime 链式推进） */

@@ -145,6 +145,8 @@ export class Recorder implements SceneEnv {
       fadeIn?: Ms;
       fadeOut?: Ms;
       loop?: boolean;
+      channels?: number;
+      pan?: number;
     },
   ): void {
     this.nodes.push({
@@ -158,11 +160,20 @@ export class Recorder implements SceneEnv {
   bgm(
     clip: { url: string },
     options?: Omit<
-      { at?: Ms; volume?: number; fadeIn?: Ms; fadeOut?: Ms; loop?: boolean },
+      {
+        at?: Ms;
+        volume?: number;
+        fadeIn?: Ms;
+        fadeOut?: Ms;
+        loop?: boolean;
+        channels?: number;
+        pan?: number;
+      },
       "at"
     >,
   ): void {
-    this.audio(clip, options);
+    // bgm 糖：缺省循环播放（显式 loop:false 仍可覆盖）
+    this.audio(clip, { ...options, loop: options?.loop ?? true });
   }
 }
 

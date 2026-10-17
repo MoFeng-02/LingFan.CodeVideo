@@ -22,7 +22,11 @@ import { TimelineEngine, type EngineOptions } from "./app/runtime";
 
 export { makeRenderError } from "./app/runtime/error";
 export { TimelineEngine } from "./app/runtime/engine";
-export type { EngineOptions, RunSummary } from "./app/runtime/engine-types";
+export type {
+  EngineOptions,
+  RunHooks,
+  RunSummary,
+} from "./app/runtime/engine-types";
 export { validate } from "./domain/validation";
 export {
   timestampAt,
@@ -51,10 +55,13 @@ function assemble(opts: RenderOptions): {
     headless: opts.headless ?? false,
     assets: opts.assets ?? makeDefaultAssets(),
   });
-  // 位图来源：每帧新建（确定性不依赖对象复用；ImageBitmap 路径归 GPU 适配器）
+  // 位图来源：每帧新建（确定性不依赖对象复用；ImageBitmap 路径归 GPU 适配器）。
+  // 非占位：真画布时逐帧清屏——fn 直接 2d 绘制，上一帧残留必须清掉
   engine.setPainter((f, t) => {
     void f;
     void t;
+    if (!opts.headless && canvas instanceof HTMLCanvasElement)
+      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     const data = new Uint8ClampedArray(opts.width * opts.height * 4);
     return { data, width: opts.width, height: opts.height };
   });
@@ -69,15 +76,29 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
   const { engine } = assemble(options);
   const exporter = options.exporter;
   if (!exporter) {
-    // 预览模式缺省未实装（实时呈现后续版本）；导出走注入的 exporter
+    // 预览模式缺省未实装（实时呈现由宿主用 paced sink 装配，见 examples/browser）；导出走注入的 exporter
     throw makeMissingExporter();
   }
   const sink = exporterAdapter(exporter);
+  // 预览端（paced sink）与导出共用同一 run；音频脚本钩子在建时间线后即刻回调
   const summary = await engine.run(
     scene as SceneInternal<unknown>,
     sink,
     options.onProgress,
+    {
+      onAudioScript: options.onAudioScript,
+    },
   );
+  // 音频：事件表 → AudioClock 混音 → exporter.writeAudio（缺省 = 纯视频导出）
+  if (options.audio && summary.audioEvents.length > 0 && exporter.writeAudio) {
+    const samples = await options.audio.renderTimeline(
+      summary.durationMs,
+      options.fps,
+      summary.audioEvents,
+    );
+    // 单段全时间线样本（离线混音产物）：一次 writeAudio 交整轨
+    for (const s of samples) await exporter.writeAudio(s.data, 48_000, 2);
+  }
   return {
     frames: summary.frames,
     durationMs: summary.durationMs,

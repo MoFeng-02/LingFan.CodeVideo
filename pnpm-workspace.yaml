@@ -2,6 +2,6 @@
 packages:
   - packages/*
 
-# pnpm v12：构建脚本白名单（v0.1 仅 esbuild 需要 postinstall）
-onlyBuiltDependencies:
-  - esbuild
+# pnpm 12：构建脚本白名单（allowBuilds 取代 pnpm 10 的 onlyBuiltDependencies；仅 esbuild 需要 postinstall）
+allowBuilds:
+  esbuild: true

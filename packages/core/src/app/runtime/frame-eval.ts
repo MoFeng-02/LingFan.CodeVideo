@@ -11,7 +11,7 @@ import type {
 } from "../../domain/simulation/types";
 import { makeRenderError } from "./error";
 import type { ChainSpan, EvalDeps, SpawnChain } from "./engine-types";
-import { findSpan } from "./timeline-build";
+import { findSpan, findSpanLooping } from "./timeline-build";
 import { dynamicSpawn, schedulerFacade } from "./spawn-handle";
 
 function wrapThrow(e: unknown, sceneId: string, t: Ms, what: string): never {
@@ -30,7 +30,8 @@ export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
   const ordered: Array<{ chain: SpawnChain | null; span: ChainSpan }> = [];
   for (const c of state.spawnChains) {
     if (c.killed || t < c.start || t >= c.end) continue;
-    const span = findSpan(c.spans, t);
+    // forever 链内容播完后循环重放（回卷 span）；一次性链照常查
+    const span = findSpanLooping(c, t);
     if (span) ordered.push({ chain: c, span });
   }
   const main = findSpan(state.spans, t);

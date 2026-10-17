@@ -13,7 +13,13 @@ import type {
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { buildTimeline } from "./timeline-build";
-import type { EvalDeps, TimelineState } from "./engine-types";
+import type {
+  ChainSpan,
+  EvalDeps,
+  RunHooks,
+  RunSummary,
+  TimelineState,
+} from "./engine-types";
 
 /** 引擎可变状态装配（TimelineEngine 独占持有，原子单元经 EvalDeps 显式共享） */
 function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
@@ -21,6 +27,7 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     opts,
     deadUnits: new Set<string>(),
     spawnChains: [],
+    audioEvents: [],
     form3: new Map(),
     spans: [],
     timelineEnd: 0,
@@ -72,6 +79,27 @@ export function buildSampleGrid(state: TimelineState): Ms[] {
 
   for (const c of state.spawnChains) {
     if (!c.killed) walkSpans(c.spans);
+    // forever 链循环重放：内容播完后的尾段沿链网格（第一圈相位）补采样点
+    if (!c.killed && c.end !== Infinity) {
+      const contentLen = c.spans[c.spans.length - 1]!.end - c.start;
+      if (contentLen > 0 && c.end - c.start > contentLen) {
+        const loops = Math.ceil((c.end - c.start) / contentLen);
+        const original = c.spans;
+        for (let k = 1; k < loops; k++)
+          for (const span of original) {
+            const shifted: ChainSpan = {
+              scene: span.scene,
+              seg: span.seg,
+              start: span.start + k * contentLen,
+              end: span.end + k * contentLen,
+            };
+            for (const u of span.seg.units) {
+              if (u.loop && u.loop.iterationMs === undefined) continue; // form-3 简化：循环圈内沿基础网格
+              addUnit(u, shifted.start, shifted.end);
+            }
+          }
+      }
+    }
   }
   walkSpans(state.spans);
   points.sort((a, b) => a - b);
@@ -105,8 +133,11 @@ export class TimelineEngine {
     head: SceneInternal<unknown>,
     sink: FrameSink,
     onProgress?: (done: number, total: number) => void,
-  ): Promise<{ frames: number; durationMs: Ms; lastState: FrameState }> {
+    hooks?: RunHooks,
+  ): Promise<RunSummary> {
     this.buildTimeline(head);
+    // 时间线建好即可预排音频（预览端实时播放；导出端走组合根离线混音）
+    hooks?.onAudioScript?.(this.state.audioEvents, this.state.timelineEnd);
     let grid = buildSampleGrid(this.state);
     let idx = 0;
     let chainCount = this.state.spawnChains.length;
@@ -135,6 +166,7 @@ export class TimelineEngine {
       frames: written,
       durationMs: this.state.timelineEnd,
       lastState: this.aggregator.full(),
+      audioEvents: this.state.audioEvents,
     };
   }
 

@@ -11,7 +11,8 @@
     "test:unit": "vitest run",
     "build": "pnpm -r build",
     "format": "prettier --write \"packages/**/src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\"",
-    "format:check": "prettier --check \"packages/**/src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\""
+    "format:check": "prettier --check \"packages/**/src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\"",
+    "dev": "vite examples/browser --open"
   },
   "devDependencies": {
     "@lingfan-video/contracts": "workspace:*",
@@ -21,9 +22,7 @@
     "prettier": "^3.3.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.2",
+    "vite": "^5.4.21",
     "vitest": "^2.1.1"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
   }
 }
