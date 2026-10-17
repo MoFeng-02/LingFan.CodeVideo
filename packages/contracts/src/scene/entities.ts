@@ -3,6 +3,7 @@ import type { Handle, SpawnOptions } from "../scheduler";
 import type {
   AudioClip,
   AudioOptions,
+  BusAutomationSpec,
   BusSpec,
   DuckRule,
   SendSpec,
@@ -66,6 +67,12 @@ export interface SceneEnv extends CanvasEnv {
   send(spec: SendSpec): void;
   /** 登记一条侧链压制（from 起声时压低 to；确定性 DSP 在混音器里跑） */
   duck(rule: DuckRule): void;
+  /**
+   * 登记期总线自动化计划：把参数轨迹写成数据（不占帧窗池）。
+   * 时刻相对本段起点；到点生效，缺省立即、rampMs 线性过渡。
+   * 与 `ctx.bus(id).gain/pan` 同一套参数面：声明是计划，运行期句柄是即时改写。
+   */
+  automate(spec: BusAutomationSpec): void;
 }
 
 /** setup 阶段环境：资产解码同位进 setup；run 阶段拿不到 assets */

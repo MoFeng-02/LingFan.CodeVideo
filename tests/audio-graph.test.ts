@@ -1,5 +1,5 @@
 /**
- * 音频图：总线路由与增益 / 发送叠加 / 逐帧自动化插值 /
+ * 音频图：总线路由与增益 / 发送叠加 / 逐帧自动化插值 / 声明式自动化计划 /
  * 侧链 duck / 总线 kill(fadeOut) / 成环报错 / 运行期懒建总线。
  * 端到端：TimelineEngine 收集 RunSummary.audioGraph + audioVoices →
  * OfflineAudioMixer.renderProgram 出交错 Float32，直接断言样本值。
@@ -253,6 +253,125 @@ describe("音频图：侧链 duck", () => {
     expect(at(data, 450)).toBeLessThan(0.7);
     expect(at(data, 550)).toBeLessThan(0.2);
     expect(at(data, 900)).toBeGreaterThan(0.45); // 释放后恢复
+  });
+});
+
+describe("音频图：声明式自动化", () => {
+  it("到点生效：缺省立即改参数，此前保持前一值", async () => {
+    const scene = createScene(1000, (_prev, env) => {
+      env.bus({ id: "music", gain: 1 });
+      env.automate({
+        bus: "music",
+        points: [
+          { atMs: 0, gain: 0.2 },
+          { atMs: 400, gain: 1 },
+        ],
+      });
+      env.audio(clip("pad"), { bus: "music" });
+      env.step(1000, () => {});
+    });
+    const data = await render(await run(scene, 20));
+    expect(at(data, 100)).toBeCloseTo(0.5 * 0.2, 2); // 首点之后、第二点之前
+    expect(at(data, 600)).toBeCloseTo(0.5, 2); // 第二点已生效
+  });
+
+  it("rampMs：从当前有效值线性过渡", async () => {
+    const scene = createScene(1000, (_prev, env) => {
+      env.bus({ id: "music", gain: 1 });
+      env.automate({
+        bus: "music",
+        points: [
+          { atMs: 0, gain: 0.2 },
+          { atMs: 200, gain: 1, rampMs: 200 },
+        ],
+      });
+      env.audio(clip("pad"), { bus: "music" });
+      env.step(1000, () => {});
+    });
+    const data = await render(await run(scene, 20));
+    expect(at(data, 100)).toBeCloseTo(0.5 * 0.2, 2);
+    expect(at(data, 300)).toBeCloseTo(0.5 * 0.6, 2); // 过渡中点
+    expect(at(data, 600)).toBeCloseTo(0.5, 2); // 过渡完成
+  });
+
+  it("时刻相对声明段起点：第二段从自己的 0 起算", async () => {
+    const head = createScene(500, (_prev, env) => {
+      env.bus({ id: "music", gain: 1 });
+      env.audio(clip("pad"), { bus: "music" });
+      env.step(500, () => {});
+    });
+    head.cutTo(500, (_prev, env) => {
+      env.automate({
+        bus: "music",
+        points: [{ atMs: 100, gain: 0.5 }],
+      });
+      env.step(500, () => {});
+    });
+    const data = await render(await run(head, 20));
+    expect(at(data, 550)).toBeCloseTo(0.5, 2); // 段首 + 50ms：尚未到点
+    expect(at(data, 700)).toBeCloseTo(0.25, 2); // 全局 600ms 起降到 0.5
+  });
+
+  it("循环圈按内容时长同相位重放", async () => {
+    const loopBody = createScene(200, (_prev, env) => {
+      env.automate({
+        bus: "music",
+        points: [
+          { atMs: 0, gain: 0.2 },
+          { atMs: 150, gain: 1 },
+        ],
+      });
+      env.step(200, () => {});
+    });
+    const scene = createScene(900, (_prev, env) => {
+      env.bus({ id: "music", gain: 1 });
+      env.audio(clip("pad"), { bus: "music" });
+      env.spawn(loopBody, { key: "bg", forever: true });
+      env.step(900, () => {});
+    });
+    const data = await render(await run(scene, 20));
+    // 每一圈（内容 200ms）：圈首 0.2、圈内 150ms 后 1
+    // 若只展开首圈，第二圈起会保持 1（那次 1 是上一圈留下的目标值）
+    expect(at(data, 100)).toBeCloseTo(0.5 * 0.2, 2);
+    expect(at(data, 150)).toBeCloseTo(0.5, 2);
+    expect(at(data, 250)).toBeCloseTo(0.5 * 0.2, 2);
+    expect(at(data, 350)).toBeCloseTo(0.5, 2);
+    expect(at(data, 450)).toBeCloseTo(0.5 * 0.2, 2);
+    expect(at(data, 550)).toBeCloseTo(0.5, 2);
+  });
+
+  it("未登记总线回落 master", async () => {
+    const scene = createScene(1000, (_prev, env) => {
+      env.automate({ bus: "nope", points: [{ atMs: 0, gain: 0.5 }] });
+      env.audio(clip("pad"));
+      env.step(1000, () => {});
+    });
+    const data = await render(await run(scene, 20));
+    expect(at(data, 100)).toBeCloseTo(0.25, 2);
+  });
+
+  it("点表非法：登记期即报 spec_violation", async () => {
+    const increasing = createScene(500, (_prev, env) => {
+      env.automate({
+        bus: "music",
+        points: [
+          { atMs: 200, gain: 0.5 },
+          { atMs: 100, gain: 1 },
+        ],
+      });
+      env.step(500, () => {});
+    });
+    const negativeGain = createScene(500, (_prev, env) => {
+      env.automate({ bus: "music", points: [{ atMs: 0, gain: -1 }] });
+      env.step(500, () => {});
+    });
+    const panRange = createScene(500, (_prev, env) => {
+      env.automate({ bus: "music", points: [{ atMs: 0, pan: 2 }] });
+      env.step(500, () => {});
+    });
+    await expect(run(increasing)).rejects.toThrow(/严格递增/);
+    await expect(run(negativeGain)).rejects.toThrow(/gain/);
+    await expect(run(panRange)).rejects.toThrow(/pan/);
   });
 });
 

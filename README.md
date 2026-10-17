@@ -54,6 +54,7 @@ tests/               集中式单元/端到端测试，不是包
 - **所有函数可具名消杀，消亡也有过程**：spawn 链用 `key`/`Handle`，`step`/`loop` 用 `options.id`；`scheduler.kill(target, { fadeOut })` 或函数内部 `ctx.dispose({ fadeOut })` 触发——`fadeOut` 窗口内目标继续逐帧求值，回调拿 `disposing` / `disposeProgress` 0→1 自己画消失过程，窗口结束才真正出池（缺省立即死）。音频侧同义：`AudioHandle.stop(fadeOutMs)`。
 - **音频是运行期的能力，不是一条音轨**：`ctx.audio(clip, opts)` 在任意 step/loop 回调里发声并拿到 `AudioHandle{stop, setGain, setRate}`——可共生（随状态收声）、可独美（自由发射）、可贯穿全局；引擎不因幕/段边界自动杀声音，唯一自动终界是总时间线尾。登记期用 `env.audio/env.bgm` 做声明。
 - **声音有图可路由，导出可复算**：`env.bus/send/duck` 登记期定拓扑，运行期 `ctx.bus(id).gain(...)` / `kill({fadeOut})` 只改参数与生命周期；导出端逐样本过「总线 → 效果 → 侧链 duck → master」，预览端按图建 WebAudio 节点（duck 与插值不还原，以导出端结果为准）。`AudioProgram.graph` 缺省时走平铺混音路径。
+- **参数轨迹可以写成数据**：`env.automate({ bus:"music", points:[{ atMs:0, gain:0.2 }, { atMs:400, gain:1, rampMs:200 }] })` 登记一条到点生效的计划（时刻相对声明段起点，循环圈同相位重放）；它与运行期 `ctx.bus` 共用同一个参数面，先声明后微调不打架。
 - **事件与状态分开，去重显式**：`ctx.audio()` 每次执行都发（事件），引擎不替循环记轮次；要「每轮/每实例/整场只响一次」用 `ctx.once("iteration"|"spawn"|"scene"|"unit", fn)`——去重键确定性、每次 `run()` 重置。持续底噪用句柄持有 + `stop({ fadeOut })`，不走 `once`。
 - **包络是数据，不是隐藏自动化**：`gain(v, { envelope: curve([[0,0],[200,1]]) })` / `ramp` / `fadeIn` / `fadeOut` 只是构造 `Envelope{points}`；`fromEnd` 拐点相对素材末尾定位（`fadeOut` 对任意时长成立）。导出与预览共用同一份拐点求值。
 - **音频强类型**：`clip()` 是唯一音源构造入口（brand 类型）；音量/摆位/循环/变速是组合子（`gain/pan/loop/rate/warp`）并在构造期校验，非法组合立刻 `spec_violation`，不等到渲染才炸。

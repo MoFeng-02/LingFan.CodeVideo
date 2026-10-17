@@ -6,6 +6,7 @@ import type {
 } from "@lingfan-video/contracts";
 import type { SceneInternal, SimNode } from "../simulation/types";
 import { Recorder } from "../simulation/dsl";
+import { automationErrors } from "../audio";
 
 /**
  * 契约符合性检查：纯检查、无副作用、可对未渲染剧本前置运行。
@@ -174,6 +175,12 @@ function checkNodes(
       case "synth":
         checkSynth(path, n.spec, errors);
         break;
+      case "automate": {
+        // 与登记期同一套判据：字面量绕过组合子时也能报出来
+        for (const message of automationErrors(n.spec))
+          errors.push({ path, code: "spec_violation", message });
+        break;
+      }
     }
   }
 }

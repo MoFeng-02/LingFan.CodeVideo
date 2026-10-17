@@ -1,6 +1,7 @@
 import type {
   AudioClip,
   AudioOptions,
+  BusAutomationSpec,
   BusSpec,
   DuckRule,
   FrameState,
@@ -58,6 +59,7 @@ export type SimNode =
       anchor: Ms;
     }
   | { kind: "synth"; spec: SynthSpec; anchor: Ms }
+  | { kind: "automate"; spec: BusAutomationSpec }
   | { kind: "bus"; spec: BusSpec }
   | { kind: "send"; spec: SendSpec }
   | { kind: "duck"; rule: DuckRule };
@@ -150,6 +152,8 @@ export interface CompiledSegment {
   buses: BusSpec[];
   sends: SendSpec[];
   ducks: DuckRule[];
+  /** 登记期参数计划（段内相对时刻；runtime 全局化后按时间推进生效） */
+  automations: BusAutomationSpec[];
   /** transitionTo 提前收窗（其后节点不活跃）；undefined = 跑满 duration */
   activeEnd?: Ms;
   /** transitionTo 的目标片段（由 compile 从节点流透出，runtime 链式推进用） */

@@ -17,6 +17,7 @@ import type {
   SceneInternal,
 } from "../../domain/simulation/types";
 import type { MutableVoice } from "./audio-runtime";
+import type { DeclaredAutomation } from "./bus-automation";
 
 /** 链上一段时间线占位（transition 提前收窗：end 取 activeEnd） */
 export interface ChainSpan {
@@ -117,6 +118,8 @@ export interface TimelineState {
   busPoints: Map<string, BusPoint[]>;
   /** 总线消亡窗口 */
   busKill: Map<string, { from: Ms; until: Ms }>;
+  /** 声明式自动化队列（全局时刻；每帧推进游标，按声明时刻起坡） */
+  busAutomation: Map<string, DeclaredAutomation>;
   /** 未给 ms 的 loop：迭代号与迭代起点（按单元键登记） */
   selfPaced: Map<string, { iteration: number; iterStart: Ms }>;
   spans: ChainSpan[];

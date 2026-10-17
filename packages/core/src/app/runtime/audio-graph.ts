@@ -103,23 +103,34 @@ function pruneRamps(state: TimelineState, id: BusId, atMs: Ms): void {
 }
 
 /**
- * 登记参数过渡：起点取当前有效值（在途过渡的当前插值），目标写入即时参数。
+ * 登记参数过渡：起点默认取当前有效值（在途过渡的当前插值）；
+ * 也可给出起点时刻——声明式轨迹以声明时刻为起点，曲线因此不随帧格漂移。
  * rampMs ≤ 0 = 立即生效并清掉该参数的在途过渡。
  */
-function registerRamp(
+export function registerParamRamp(
   state: TimelineState,
   id: BusId,
   key: keyof Pick<BusParams, "gain" | "pan">,
   to: number,
   rampMs: Ms | undefined,
+  fromMs: Ms = state.nowMs,
 ): void {
-  const from = paramsAt(state, id, state.nowMs)[key];
+  const from = paramsAt(state, id, fromMs)[key];
   const ms = Math.max(0, rampMs ?? 0);
   const ramps: BusRampState = state.busRamps.get(id) ?? {};
-  if (ms > 0) ramps[key] = { fromMs: state.nowMs, ms, from, to };
+  if (ms > 0) ramps[key] = { fromMs, ms, from, to };
   else delete ramps[key];
   if (ramps.gain || ramps.pan) state.busRamps.set(id, ramps);
   else state.busRamps.delete(id);
+}
+
+/** 落参数目标值（不动在途过渡；轨迹点统一由帧末采样记录） */
+export function writeBusParams(
+  state: TimelineState,
+  id: BusId,
+  patch: Partial<BusParams>,
+): void {
+  state.busParams.set(id, { ...paramsOf(state, id), ...patch });
 }
 
 /**
@@ -214,11 +225,11 @@ export function makeBusHandle(deps: EvalDeps, id: BusId): BusHandle {
   const spec = state.busSpecs.get(id);
   // 参数写入只改即时目标值；轨迹点统一由帧末 sampleBuses 记录（一帧一点，避免重复点）
   const write = (patch: Partial<BusParams>): void => {
-    state.busParams.set(id, { ...paramsOf(state, id), ...patch });
+    writeBusParams(state, id, patch);
   };
   /** 带过渡地改一个参数：先按当前有效值登记斜坡，再落目标值 */
   const setParam = (key: "gain" | "pan", to: number, rampMs?: Ms): void => {
-    registerRamp(state, id, key, to, rampMs);
+    registerParamRamp(state, id, key, to, rampMs);
     write(key === "gain" ? { gain: to } : { pan: to });
   };
   return {

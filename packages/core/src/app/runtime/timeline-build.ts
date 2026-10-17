@@ -1,4 +1,5 @@
-import type { Ms } from "@lingfan-video/contracts";
+import type { AutomationPoint, BusId, Ms } from "@lingfan-video/contracts";
+import { MASTER_BUS } from "@lingfan-video/contracts";
 import { compileSegment } from "../../domain/simulation";
 import { Recorder } from "../../domain/simulation/dsl";
 import type {
@@ -7,6 +8,7 @@ import type {
   SceneInternal,
 } from "../../domain/simulation/types";
 import { mergeSegmentGraph } from "./audio-graph";
+import { installAutomation } from "./bus-automation";
 import { pushVoice } from "./audio-runtime";
 import { makeRenderError } from "./error";
 import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
@@ -28,6 +30,7 @@ export function resetTimeline(state: TimelineState): void {
   state.busFlushAt = undefined;
   state.busPoints.clear();
   state.busKill.clear();
+  state.busAutomation.clear();
   state.selfPaced.clear();
   state.timelineEnd = 0;
   state.nowMs = 0;
@@ -67,22 +70,20 @@ export function buildTimeline(state: TimelineState, head: SceneEntry): void {
   // forever spawn 寿命 = 总链尾：终界确定后再夹取
   for (const c of state.spawnChains) if (c.end === Infinity) c.end = end;
   materializeAudio(state);
+  materializeAutomation(state);
 }
 
 /**
- * 声音全局化：登记期声明（段内锚点）→ 全局时间线声音；forever 链按循环圈数平移展开。
- * 锚点已落到段窗外（transition 提前收窗等）的声明不发声——声明位置就是语义。
+ * 全时间线遍历「段出现」：spawn 链（forever 循环圈按内容时长平移展开）+ 主链。
+ * 声音与参数计划共用同一份遍历，循环圈的全局化口径只有一处。
  */
-function materializeAudio(state: TimelineState): void {
-  const push = (seg: CompiledSegment, spanStart: Ms, spanEnd: Ms): void => {
-    for (const a of seg.audio) {
-      const at = spanStart + a.atMs;
-      if (at >= spanEnd) continue;
-      pushVoice(state, a.clip, at, a.options, a.synth);
-    }
-  };
-  const walkSpans = (spans: ChainSpan[]): void => {
-    for (const span of spans) push(span.seg, span.start, span.end);
+function forEachOccurrence(
+  state: TimelineState,
+  visit: (seg: CompiledSegment, spanStart: Ms, spanEnd: Ms) => void,
+): void {
+  const walkSpans = (spans: ChainSpan[], shift: Ms = 0): void => {
+    for (const span of spans)
+      visit(span.seg, span.start + shift, span.end + shift);
   };
   for (const c of state.spawnChains) {
     if (c.killed) continue;
@@ -90,16 +91,57 @@ function materializeAudio(state: TimelineState): void {
     const last = c.spans[c.spans.length - 1];
     const contentLen = last ? last.end - c.start : 0;
     if (contentLen > 0 && c.end - c.start > contentLen) {
-      // forever 循环重放：声音按圈数平移展开（与画面回卷同相位）
+      // forever 循环重放：按圈数平移展开（与画面回卷同相位）
       const loops = Math.ceil((c.end - c.start) / contentLen);
-      for (let k = 1; k < loops; k++)
-        for (const span of c.spans) {
-          const at = span.start + k * contentLen;
-          push(span.seg, at, span.end + k * contentLen);
-        }
+      for (let k = 1; k < loops; k++) walkSpans(c.spans, k * contentLen);
     }
   }
   walkSpans(state.spans);
+}
+
+/**
+ * 声音全局化：登记期声明（段内锚点）→ 全局时间线声音。
+ * 锚点已落到段窗外（transition 提前收窗等）的声明不发声——声明位置就是语义。
+ */
+function materializeAudio(state: TimelineState): void {
+  forEachOccurrence(state, (seg, spanStart, spanEnd) => {
+    for (const a of seg.audio) {
+      const at = spanStart + a.atMs;
+      if (at >= spanEnd) continue;
+      pushVoice(state, a.clip, at, a.options, a.synth);
+    }
+  });
+}
+
+/**
+ * 参数计划全局化：段内相对时刻 → 全局时刻（forever 循环圈同相位平移）。
+ * 未知总线回落 master——与发送/压制端点同一容错口径（不因一个拼写废掉整条声轨）。
+ * 每个点只在其段活跃窗口内生效；同一时刻多点按登记顺序叠加（后者覆盖同名参数）。
+ */
+function materializeAutomation(state: TimelineState): void {
+  const declared = new Set<string>([MASTER_BUS, ...state.busSpecs.keys()]);
+  const resolve = (id: BusId): BusId => (declared.has(id) ? id : MASTER_BUS);
+  const byBus = new Map<BusId, AutomationPoint[]>();
+  forEachOccurrence(state, (seg, spanStart, spanEnd) => {
+    for (const spec of seg.automations) {
+      const bus = resolve(spec.bus);
+      let points = byBus.get(bus);
+      if (!points) {
+        points = [];
+        byBus.set(bus, points);
+      }
+      for (const p of spec.points) {
+        const at = spanStart + p.atMs;
+        if (at >= spanEnd) continue;
+        points.push(at === p.atMs ? p : { ...p, atMs: at });
+      }
+    }
+  });
+  for (const [bus, points] of byBus) {
+    // 稳定排序（ES 保证）：同一时刻保持登记顺序
+    points.sort((a, b) => a.atMs - b.atMs);
+    installAutomation(state, bus, points);
+  }
 }
 /** 编译单段：先跑 setup（资产/解码只跑一次）再跑 body 捕获节点流（每次出现都跑——prev 依出现上下文，不能按 id 缓存） */
 export function compileScene(

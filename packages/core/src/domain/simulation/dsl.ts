@@ -1,6 +1,7 @@
 import type {
   AudioClip,
   AudioOptions,
+  BusAutomationSpec,
   BusSpec,
   DuckRule,
   LoopSpec,
@@ -15,7 +16,7 @@ import type {
   WaitFn,
   WaitOptions,
 } from "@lingfan-video/contracts";
-import { loop as loopUntil } from "../audio";
+import { assertAutomation, loop as loopUntil } from "../audio";
 import type { SceneInternal, SimNode } from "./types";
 
 let sceneSeq = 0;
@@ -199,6 +200,12 @@ export class Recorder implements SceneEnv {
 
   duck(rule: DuckRule): void {
     this.nodes.push({ kind: "duck", rule });
+  }
+
+  automate(spec: BusAutomationSpec): void {
+    // 参数计划：把轨迹写成数据（不占帧窗池，时刻相对本段起点）
+    assertAutomation(spec);
+    this.nodes.push({ kind: "automate", spec });
   }
 }
 

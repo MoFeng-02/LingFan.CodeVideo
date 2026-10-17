@@ -110,6 +110,24 @@ export interface BusAutomation {
 }
 
 /**
+ * 声明式自动化点：登记期写下的参数计划，时间线推进到点即生效。
+ * 只写要控制的参数（未写的参数不动）；rampMs = 从当前有效值线性过渡的时长，缺省立即。
+ * 时刻相对声明它的段落起点，因此同一段被重复播放（spawn 循环圈）时自动同相位平移。
+ */
+export interface AutomationPoint {
+  readonly atMs: Ms;
+  readonly gain?: number;
+  readonly pan?: number;
+  readonly rampMs?: Ms;
+}
+
+/** 单总线的声明式轨迹（atMs 严格递增；空点表 = 无计划） */
+export interface BusAutomationSpec {
+  readonly bus: BusId;
+  readonly points: readonly AutomationPoint[];
+}
+
+/**
  * 整条时间线的音频图：拓扑（静态）+ 参数轨迹（逐帧）。
  * 与 `AudioProgram.voices` 一起组成「样本 = f(program)」的完整输入。
  */

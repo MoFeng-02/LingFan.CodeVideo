@@ -1,4 +1,10 @@
-import type { BusSpec, DuckRule, Ms, SendSpec } from "@lingfan-video/contracts";
+import type {
+  BusAutomationSpec,
+  BusSpec,
+  DuckRule,
+  Ms,
+  SendSpec,
+} from "@lingfan-video/contracts";
 import { SYNTH_CLIP } from "../audio/synth-clip";
 import type { SceneInternal, SimNode } from "./types";
 import type {
@@ -34,6 +40,7 @@ export function compileSegment(
   const buses: BusSpec[] = [];
   const sends: SendSpec[] = [];
   const ducks: DuckRule[] = [];
+  const automations: BusAutomationSpec[] = [];
   let activeEnd: Ms | undefined;
   let transitionNext: unknown;
   let order = 0;
@@ -178,6 +185,11 @@ export function compileSegment(
           });
           break;
         }
+        case "automate": {
+          // 段内相对时刻；全局化（含循环圈平移）由 runtime 在时间线构建时完成
+          automations.push(n.spec);
+          break;
+        }
         case "bus": {
           buses.push(n.spec);
           break;
@@ -205,6 +217,7 @@ export function compileSegment(
     buses,
     sends,
     ducks,
+    automations,
     activeEnd,
     transitionNext,
     bodyResult,

@@ -25,6 +25,7 @@ import {
   sampleBuses,
 } from "./audio-graph";
 import { emitAudio } from "./audio-runtime";
+import { applyAutomation } from "./bus-automation";
 import { makeRenderError } from "./error";
 import type { ChainSpan, EvalDeps, SpawnChain } from "./engine-types";
 import { findSpan, findSpanLooping } from "./timeline-build";
@@ -82,6 +83,8 @@ function unitDisposal(
 export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
   const { state } = deps;
   state.nowMs = t; // 句柄操作/声音 alive 的时间轴依据 = 当前求值时刻
+  // 声明式轨迹先于回调生效：到点的计划在这一帧之前就已落地
+  applyAutomation(state, t);
   const ordered: Array<{ chain: SpawnChain | null; span: ChainSpan }> = [];
   for (const c of state.spawnChains) {
     if (c.killed || t < c.start || t >= c.end) continue;

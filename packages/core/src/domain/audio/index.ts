@@ -14,3 +14,4 @@ export {
   DEFAULT_GAIN,
   DEFAULT_PAN,
 } from "./combinators";
+export { assertAutomation, automationErrors } from "./automation";
