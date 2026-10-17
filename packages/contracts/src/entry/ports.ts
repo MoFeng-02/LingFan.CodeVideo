@@ -32,6 +32,12 @@ export interface RenderOptions {
    * GPU/离屏/自定义合成路径注入自己的实现）
    */
   painter?: FrameSource;
+  /**
+   * 无可用帧像素来源时的策略（缺省 "required"）：
+   * - "required"：既无 painter、绘制目标也没有 2D 上下文 → 首帧求值 `spec_violation`（不静默交空白帧）
+   * - "allow-blank"：显式接受全 0 占位位图（预览 sink 自绘、或只关心时间/音频的场合）
+   */
+  frames?: "required" | "allow-blank";
   headless?: boolean;
   onProgress?(doneFrames: number, totalFrames: number): void;
 }

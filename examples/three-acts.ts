@@ -50,6 +50,8 @@ const result = await render(act1, {
   width: 640,
   height: 360,
   exporter,
+  // CPU 占位示例：显式接受全 0 位图（否则缺省要求 painter/2D 画布，缺失即 spec_violation）
+  frames: "allow-blank",
   headless: true,
   onProgress: (done, total) => process.stdout.write(`\r帧 ${done}/${total}`),
 });

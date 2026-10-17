@@ -1,7 +1,7 @@
 /**
  * 帧像素来源：单一事实来源是绘制目标 canvas。
- * 钉三件事：①缺省从画布 2D 回读（导出帧不是空白）②注入 painter 时以注入为准
- * ③无 2D 上下文时退回零位图（模拟仍可跑，属配置缺失）。
+ * 钉四件事：①缺省从画布 2D 回读（导出帧不是空白）②注入 painter 时以注入为准
+ * ③无 painter 且无 2D 上下文 → spec_violation（配置缺失不静默交空白帧）\n * ④显式 frames:"allow-blank" 才允许全 0 占位位图。
  */
 import { describe, expect, it } from "vitest";
 import { render, start } from "@lingfan-video/core";
@@ -84,7 +84,30 @@ describe("帧像素来源", () => {
     expect(exporter.frames[0]?.data[0]).toBe(7);
   });
 
-  it("无 2D 上下文时退回零位图，模拟与计时照常", async () => {
+  it("无 painter 且无 2D 上下文 → spec_violation（不静默交空白帧）", async () => {
+    const canvas = {
+      width: W,
+      height: H,
+      getContext: () => null,
+    } as unknown as HTMLCanvasElement;
+    const exporter = new FrameSequenceExporter();
+    const scene = start(100, (env) => {
+      env.step(100, () => {});
+    });
+    await expect(
+      render(scene, {
+        fps: 10,
+        width: W,
+        height: H,
+        headless: true,
+        canvas,
+        exporter,
+      }),
+    ).rejects.toMatchObject({ name: "SpecViolation" });
+    expect(exporter.frames).toHaveLength(0);
+  });
+
+  it('显式 frames:"allow-blank" 才给零位图（预览 sink 自绘等场景）', async () => {
     const canvas = {
       width: W,
       height: H,
@@ -101,6 +124,7 @@ describe("帧像素来源", () => {
       headless: true,
       canvas,
       exporter,
+      frames: "allow-blank",
     });
     expect(result.frames).toBeGreaterThan(0);
     expect(exporter.frames[0]?.data.every((v) => v === 0)).toBe(true);

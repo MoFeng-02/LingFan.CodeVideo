@@ -133,6 +133,11 @@ describe("导出音轨接线", () => {
       height: 4,
       canvas: { width: 1, height: 1 } as unknown as OffscreenCanvas,
       headless: true,
+      painter: () => ({
+        data: new Uint8ClampedArray(4 * 4 * 4),
+        width: 4,
+        height: 4,
+      }),
       exporter,
       audio: clock,
     });

@@ -230,11 +230,8 @@ async function play(): Promise<void> {
       audioOutput: out,
       headless: false,
       // 预览端画面就是这块 canvas（实时可见），不需要逐帧回读；导出模式缺省会回读。
-      painter: () => ({
-        data: new Uint8ClampedArray(stage.width * stage.height * 4),
-        width: stage.width,
-        height: stage.height,
-      }),
+      // 显式声明「本模式不需要像素」：否则缺省要求有 painter/2D 画布，缺失会直接 spec_violation。
+      frames: "allow-blank",
       onProgress: (done, total) => {
         hud.textContent = `帧 ${done}/${total} · 声音 ${out.voiced}`;
       },

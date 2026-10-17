@@ -55,10 +55,10 @@ function assemble(opts: RenderOptions): {
     audioOut: opts.audioOutput,
   });
   // 帧像素来源：单一事实来源是绘制目标本身（step 回调画在 canvas 上，帧从画布回读）。
-  // 注入 painter = GPU/离屏/自定义合成路径自绘；缺省 = 2D 回读；无 2D 上下文（Node 无 canvas 实现）
-  // 时退回零位图，保证模拟与计时仍可跑（此时导出帧为空白，属配置缺失而非静默错误）。
+  // 注入 painter = GPU/离屏/自定义合成路径自绘；缺省 = 2D 回读；
+  // 两者都没有时**不得静默交空白帧**：缺省直接 spec_violation，只有显式 frames:"allow-blank" 才给占位位图。
   engine.setPainter(
-    opts.painter ?? readbackPainter(canvas, opts) ?? blankPainter(opts),
+    opts.painter ?? readbackPainter(canvas, opts) ?? placeholderPainter(opts),
   );
   return { engine, canvas };
 }
@@ -78,7 +78,22 @@ function readbackPainter(
   };
 }
 
-/** 无绘制后端时的占位位图（全 0） */
+/**
+ * 无可用帧像素来源时的占位策略：
+ * - 缺省（frames 未声明或 "required"）→ 首帧求值即 `spec_violation`：配置缺失要炸，不能静默交全 0 帧；
+ * - 显式 `frames: "allow-blank"` → 全 0 占位位图（预览 sink 自绘、或只关心时间/音频的场合）。
+ */
+function placeholderPainter(
+  opts: RenderOptions,
+): (f: FrameIndex, t: Ms) => FrameBitmap {
+  if (opts.frames !== "allow-blank")
+    return () => {
+      throw makeMissingFrameSource();
+    };
+  return blankPainter(opts);
+}
+
+/** 零位图占位（仅 allow-blank 显式选择时使用） */
 function blankPainter(
   opts: RenderOptions,
 ): (f: FrameIndex, t: Ms) => FrameBitmap {
@@ -87,6 +102,17 @@ function blankPainter(
     width: opts.width,
     height: opts.height,
   });
+}
+
+function makeMissingFrameSource(): Error {
+  const err = new Error(
+    "本次 render 需要帧像素，但没有可用的帧来源：既未注入 RenderOptions.painter，" +
+      `绘制目标也没有 2D 上下文（canvas.getContext("2d") 不可用；Node 环境通常没有 canvas 实现）。` +
+      "不会静默导出空白帧——请注入 painter 或可 2D 的 canvas，若确实不需要像素" +
+      '（如预览 sink 自行绘制），显式声明 RenderOptions.frames = "allow-blank"。',
+  );
+  err.name = "SpecViolation";
+  return err;
 }
 
 /** render（RenderFn 契约实现）：exporter 注入 = 导出模式；缺省 = 预览模式 */
