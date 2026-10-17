@@ -4,7 +4,8 @@
  *
  * 预览四件套：
  * 1. 用户 canvas 传入 RenderOptions —— step 回调的 ctx.canvas 就是它，2d 绘制直接可见；
- * 2. PacedPreviewExporter —— 每帧对齐「时间戳 → 墙钟」推进，预览按真实时长播放；
+ * 2. PacedPreviewExporter（infra）—— 以音频时钟为主时钟放帧，画面/声音同一起点同一速度；
+ *    首次创建 AudioContext 时其时钟可能冷启动数秒，跟墙钟会「画面放完声音还在响」；
  * 3. WebAudioOutput —— 引擎边跑边发声音（登记期声明的 + 回调里 ctx.audio 现场发起的），
  *    预览端只负责排到 AudioContext 上；
  * 4. 引擎照旧确定性采样（变帧率网格），预览只是消费端，不改时间线语义。
@@ -13,6 +14,7 @@ import { start } from "@lingfan-video/core";
 import { render } from "@lingfan-video/core";
 import {
   OfflineAudioMixer,
+  PacedPreviewExporter,
   WebAudioOutput,
   WebCodecsExporter,
 } from "@lingfan-video/infra";
@@ -20,62 +22,11 @@ import { clip, gain, loop, pan, rate, warp } from "@lingfan-video/core";
 import type {
   AudioHandle,
   AudioOutput,
-  ExportFormat,
-  ExportResult,
-  Exporter,
-  ExporterImpl,
-  FrameBitmap,
   Ms,
   Scene,
   StepContext,
 } from "@lingfan-video/contracts";
 import { makeSynthDecoder, makeSynthLoader } from "./audio-assets";
-
-/** 预览导出器：不编码（impl/format = frames），只把每帧按真实时间戳排队放出（变帧率下按绝对时间播放） */
-class PacedPreviewExporter implements Exporter {
-  readonly impl: ExporterImpl = "frames";
-  readonly format: ExportFormat = "frames";
-  private startWall = 0;
-  private frames = 0;
-  private lastMs = 0;
-
-  constructor(
-    private readonly target: HTMLCanvasElement,
-    private readonly paused: () => boolean,
-  ) {
-    void this.target;
-  }
-
-  async writeFrame(frame: FrameBitmap, timestampMs: Ms): Promise<void> {
-    void frame; // CPU 占位位图（全 0）：可见画面来自 fn 直接绘制，不叠加
-    this.frames++;
-    this.lastMs = timestampMs;
-    if (this.startWall === 0) this.startWall = performance.now();
-    // 暂停累计：恢复后不追帧
-    if (this.paused()) {
-      const p = performance.now();
-      while (this.paused()) await new Promise((r) => setTimeout(r, 80));
-      this.startWall += performance.now() - p;
-    }
-    const wait = this.startWall + timestampMs - performance.now();
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  }
-
-  async finalize(): Promise<ExportResult> {
-    return {
-      output: "(preview)",
-      frames: this.frames,
-      durationMs: this.lastMs,
-      format: "frames",
-    };
-  }
-
-  reset(): void {
-    this.startWall = 0;
-    this.frames = 0;
-    this.lastMs = 0;
-  }
-}
 
 // ---------- 三幕剧本（fn 直接在 ctx.canvas 上 2d 绘制） ----------
 
@@ -201,11 +152,11 @@ const exportBtn = document.getElementById("export") as HTMLButtonElement;
 let paused = false;
 let busy = false;
 
-/** 预览输出计数包装：只统计引擎发起了多少声音（诊断信息用） */
+/** 预览输出计数包装：统计引擎发起了多少声音（诊断用），并转发音频主时钟 */
 class CountingOutput implements AudioOutput {
   voiced = 0;
 
-  constructor(private readonly inner: AudioOutput) {}
+  constructor(private readonly inner: WebAudioOutput) {}
 
   begin(program: Parameters<AudioOutput["begin"]>[0]): Promise<void> {
     this.voiced += program.voices.length;
@@ -220,11 +171,20 @@ class CountingOutput implements AudioOutput {
   dispose(): void {
     this.inner.dispose();
   }
+
+  /** 音频主时钟（时间线毫秒）：画面排帧跟随它，画面与声音同一起点/同一速度 */
+  nowMs(): Ms {
+    return this.inner.nowMs();
+  }
 }
 
-const sink = new PacedPreviewExporter(stage, () => paused);
 let audioCtx: AudioContext | null = null;
 let output: CountingOutput | null = null;
+/** 预览节拍器：以音频时钟为唯一主时钟排帧；无音频时退回墙钟（首次冷启动也不会音画错位） */
+const sink = new PacedPreviewExporter({
+  clock: () => output?.nowMs() ?? performance.now(),
+  paused: () => paused,
+});
 
 function ensureAudio(): { ctx: AudioContext; out: CountingOutput } {
   if (audioCtx && output) return { ctx: audioCtx, out: output };
@@ -258,6 +218,8 @@ async function play(): Promise<void> {
   if (ctx.state === "suspended") await ctx.resume();
   out.dispose();
   out.voiced = 0;
+  // 首次创建 AudioContext 时音频时钟可能冷启动数秒：首帧会等它就位（画面不抢先）
+  hud.textContent = "准备音频时钟…";
   try {
     const result = await render(act1, {
       fps: 30,

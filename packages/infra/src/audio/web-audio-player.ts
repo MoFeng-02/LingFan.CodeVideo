@@ -205,7 +205,8 @@ export class WebAudioOutput implements AudioOutput {
     param.setValueAtTime(0, endSec);
   }
 
-  private nowMs(): Ms {
+  /** 当前时间线位置（毫秒）：以 begin 锚定的起点为零点，供预览端按同一主时钟排帧 */
+  nowMs(): Ms {
     return (this.ctx.currentTime - this.startedAtSec) * 1000;
   }
 }

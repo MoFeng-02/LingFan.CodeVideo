@@ -21,6 +21,8 @@ export type {
 } from "./audio/offline-mixer";
 export { WebAudioOutput } from "./audio/web-audio-player";
 export type { AudioBufferLoader } from "./audio/web-audio-player";
+export { PacedPreviewExporter } from "./preview/paced-exporter";
+export type { PacedPreviewOptions } from "./preview/paced-exporter";
 export {
   isAudible,
   evaluateVoice,
