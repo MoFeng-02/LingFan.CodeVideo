@@ -28,6 +28,10 @@ export interface SpawnChain {
   start: Ms;
   end: Ms;
   killed: boolean;
+  /** 消亡窗口起点（kill/dispose 带 fadeOut 时写入；窗口内继续求值） */
+  dyingFrom?: Ms;
+  /** 消亡窗口终点（含）；t >= 此值 → 真正出池 */
+  dyingUntil?: Ms;
 }
 
 export interface EngineOptions {
@@ -53,7 +57,9 @@ export interface RunSummary {
 /** 引擎可变状态：跨原子单元共享（自由函数显式传参，不散全局） */
 export interface TimelineState {
   opts: EngineOptions;
-  deadUnits: Set<string>; // `${sceneId}/${unitKey}`
+  deadUnits: Set<string>; // `${sceneId}/${unitKey}`：硬死（立即不求值）
+  /** 单元级消亡窗口：key → {from,until}；窗口内继续求值并暴露 disposing */
+  dyingUnits: Map<string, { from: Ms; until: Ms }>;
   spawnChains: SpawnChain[];
   /** 声音记录（登记期已全局化；运行期发射追加） */
   audioVoices: MutableVoice[];

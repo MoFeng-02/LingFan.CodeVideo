@@ -1,19 +1,30 @@
 import type { Ms } from "../shared/units";
 
+/**
+ * 消杀选项。
+ * fadeOut = 消亡窗口（时间线毫秒）：窗口内目标**继续逐帧求值**，
+ * 回调拿 `disposing=true` / `disposeProgress` 0→1 自己画消失过程；
+ * 窗口结束才真正出池。缺省 = 立即死（下一帧不再求值）。
+ */
+export interface KillOptions {
+  fadeOut?: Ms;
+}
+
 /** spawn 句柄：运行期生命周期控制 */
 export interface Handle {
-  kill(): void;
+  kill(options?: KillOptions): void;
   /** 显式持有终结；与 kill() 同义 */
-  dispose(): void;
+  dispose(options?: KillOptions): void;
   readonly alive: boolean;
   readonly localTime: Ms;
   readonly duration: Ms;
 }
 
-/** 调度器门面：kill 接受句柄或 key */
+/** 调度器门面：kill 接受句柄或 key/id */
 export interface Scheduler {
-  kill(handleOrKey: Handle | string): void;
-  killAll(): void;
+  /** 目标：spawn 链的 key，或 step/loop 单元的 id（编译键兜底） */
+  kill(handleOrKey: Handle | string, options?: KillOptions): void;
+  killAll(options?: KillOptions): void;
   readonly alive: number;
 }
 

@@ -52,6 +52,7 @@ tests/               集中式单元/端到端测试，不是包
 - **双池时间**：语义层单位是毫秒；`fps` 只是采样密度。`cursor` 只被 `step`/`wait`/`par` 推进。
 - **变帧率**：单元可声明 `fps`（三级继承：单元 > spawn 链 > `RenderOptions.fps`）；采样网格 = 各活跃单元自身网格点并集，空窗不产帧。
 - **保活**：`forever` spawn 活到总链尾，链内容播完后循环重放；`kill`/`dispose` 即停。
+- **所有函数可具名消杀，消亡也有过程**：spawn 链用 `key`/`Handle`，`step`/`loop` 用 `options.id`；`scheduler.kill(target, { fadeOut })` 或函数内部 `ctx.dispose({ fadeOut })` 触发——`fadeOut` 窗口内目标继续逐帧求值，回调拿 `disposing` / `disposeProgress` 0→1 自己画消失过程，窗口结束才真正出池（缺省立即死）。音频侧同义：`AudioHandle.stop(fadeOutMs)`。
 - **音频是运行期的能力，不是一条音轨**：`ctx.audio(clip, opts)` 在任意 step/loop 回调里发声并拿到 `AudioHandle{stop, setGain, setRate}`——可共生（随状态收声）、可独美（自由发射）、可贯穿全局；引擎不因幕/段边界自动杀声音，唯一自动终界是总时间线尾。登记期用 `env.audio/env.bgm` 做声明。
 - **音频强类型**：`clip()` 是唯一音源构造入口（brand 类型）；音量/摆位/循环/变速是组合子（`gain/pan/loop/rate/warp`）并在构造期校验，非法组合立刻 `spec_violation`，不等到渲染才炸。
 - **音频不占时间**：发声不推进时间池、不产帧；需要「只有声音的段落」用 `wait(ms)`。
@@ -64,7 +65,7 @@ tests/               集中式单元/端到端测试，不是包
 ## 文档
 
 - 规约索引：[私有文档/CodeVideo规约/README.md](私有文档/CodeVideo规约/README.md)
-- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟）
+- 开放问题与实现裁决：[11 号 RFC](私有文档/CodeVideo规约/11-rfc-open-issues.md)（§9 实现裁决表，含 §9.2 变帧率、§9.3 音频、§9.4 forever 循环、§9.5 音频变速、§9.6 预览装配、§9.7 生命周期终界、§9.8 音频模型、§9.9 重构验收、§9.10 视频帧来源、§9.11 导出音轨、§9.12 预览主时钟、§9.13 消杀与消亡过程）
 - 契约设计规则：[13 号](私有文档/CodeVideo规约/13-contract-design.md)
 - 目录规划：[14 号](私有文档/CodeVideo规约/14-directory-plan.md)
 

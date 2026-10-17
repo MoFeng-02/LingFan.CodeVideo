@@ -48,6 +48,7 @@ export function compileSegment(
             hold: n.hold ?? false,
             fps: effFps(n.fps),
             call: n.fn as CompiledUnit["call"],
+            disposeId: n.id,
             order: order++,
           });
           local += n.duration;
@@ -71,6 +72,7 @@ export function compileSegment(
               call: n.fn as CompiledUnit["call"],
               loop: { iteration: 0 },
               loopBase: `loop#form3#${order}`,
+              disposeId: n.id,
               order: order++,
             });
           } else {
@@ -89,6 +91,7 @@ export function compileSegment(
                 call: n.fn as CompiledUnit["call"],
                 loop: { iteration: it, iterationMs: iterMs },
                 loopBase: `loop#${order}`,
+                disposeId: n.id,
                 order,
               });
             }

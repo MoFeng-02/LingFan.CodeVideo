@@ -18,6 +18,7 @@ export function resetTimeline(state: TimelineState): void {
   state.audioVoices.length = 0;
   state.voiceSeq = 0;
   state.deadUnits.clear();
+  state.dyingUnits.clear();
   state.form3.clear();
   state.timelineEnd = 0;
   state.nowMs = 0;

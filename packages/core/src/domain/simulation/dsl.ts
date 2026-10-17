@@ -89,6 +89,7 @@ export class Recorder implements SceneEnv {
       ms: spec.ms,
       times: spec.times,
       fps: spec.fps,
+      id: spec.id,
       fn: spec.fn,
     });
   }

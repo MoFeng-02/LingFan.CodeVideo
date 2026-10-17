@@ -1,5 +1,5 @@
 import type { Ms } from "../shared/units";
-import type { Handle, Scheduler } from "../scheduler";
+import type { Handle, KillOptions, Scheduler } from "../scheduler";
 import type { FrameState } from "../feedback";
 import type { AudioClip, AudioHandle, AudioOptions } from "../audio";
 import type { CanvasEnv, Scene } from "./entities";
@@ -20,9 +20,23 @@ export interface StepOptions {
   hold?: boolean;
   /** 单元声明帧率：帧池贡献 = 窗口时长 × fps（缺省 = 继承链/基础帧率） */
   fps?: number;
+  /** 可消杀名：`scheduler.kill(id)` 按名字找得到这个单元（缺省 = 编译键） */
+  id?: string;
 }
 
-export interface StepContext extends CanvasEnv, AudioEnv {
+/**
+ * 消亡过程能力：所有运行期单元都带。
+ * `dispose()` 由函数**内部**触发自己的消亡；给了 fadeOut 则进入消亡窗口，
+ * 窗口内本单元继续逐帧求值，`disposing=true`、`disposeProgress` 0→1。
+ */
+export interface Disposal {
+  readonly disposing: boolean;
+  readonly disposeProgress: number;
+  /** 触发自己的消亡（缺省立即死；fadeOut 给消失过程） */
+  dispose(options?: KillOptions): void;
+}
+
+export interface StepContext extends CanvasEnv, AudioEnv, Disposal {
   t: Ms;
   frameIndex: number;
   totalTime: Ms;
@@ -54,9 +68,11 @@ export interface LoopSpec {
   fn: (ctx: LoopContext) => void;
   /** 本 loop 采样密度（缺省 = 继承） */
   fps?: number;
+  /** 可消杀名：scheduler.kill(id) 按名字找得到这个循环（缺省 = 编译键） */
+  id?: string;
 }
 
-export interface LoopContext extends CanvasEnv, AudioEnv {
+export interface LoopContext extends CanvasEnv, AudioEnv, Disposal {
   parentT: Ms;
   frameIndex: number;
   /** 本单元有效帧率（单元声明 > spawn 链 > 基础） */

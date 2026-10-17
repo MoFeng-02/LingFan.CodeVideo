@@ -20,6 +20,7 @@ export type SimNode =
       after?: Ms;
       hold?: boolean;
       fps?: number;
+      id?: string;
     }
   | { kind: "wait"; duration: Ms }
   | {
@@ -27,6 +28,7 @@ export type SimNode =
       ms?: Ms;
       times?: number;
       fps?: number;
+      id?: string;
       fn: (ctx: LoopContext) => void;
     }
   | { kind: "par"; children: SimNode[][] }
@@ -95,6 +97,8 @@ export interface CompiledUnit {
   loop?: { iteration: number; iterationMs?: Ms };
   /** loop 单元的宿主锚点（`loop#N`；stop() 按宿主杀全迭代） */
   loopBase?: string;
+  /** 可消杀名（scheduler.kill(id) / ctx.dispose() 按名定位；缺省 = 编译键） */
+  disposeId?: string;
   /** 源节点序（同帧绘制顺序 = 登记顺序） */
   order: number;
 }
