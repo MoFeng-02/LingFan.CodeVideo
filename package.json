@@ -1,0 +1,29 @@
+{
+  "name": "lingfan-codevideo",
+  "private": true,
+  "type": "module",
+  "description": "Code Video：确定性渲染引擎（游戏即视频）。包化代码在 packages/，示例与测试集中根目录。",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test:unit": "vitest run",
+    "build": "pnpm -r build",
+    "format": "prettier --write \"packages/**/src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\"",
+    "format:check": "prettier --check \"packages/**/src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\""
+  },
+  "devDependencies": {
+    "@lingfan-video/contracts": "workspace:*",
+    "@lingfan-video/core": "workspace:*",
+    "@lingfan-video/infra": "workspace:*",
+    "@types/node": "^22.7.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

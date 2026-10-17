@@ -1,0 +1,142 @@
+import type { Ms, Scene, ValidationError } from "@lingfan-video/contracts";
+import type { SceneInternal, SimNode } from "../simulation/types";
+import { Recorder } from "../simulation/dsl";
+
+/**
+ * 契约符合性检查：纯检查、无副作用、可对未渲染剧本前置运行。
+ * 做法：干跑登记（Recorder 捕获节点流），再对节点流做结构性检查。
+ * 检查项：window_overflow（step at/duration 越窗类 bug）、
+ * spec_violation（重复链接、body 抛错、spawn key 段内重复）。
+ */
+export function validate(scene: Scene<unknown>, fps = 60): ValidationError[] {
+  const head = scene as SceneInternal<unknown>;
+  const errors: ValidationError[] = [];
+  const seenIds = new Set<string>();
+  let cur: SceneInternal<unknown> | undefined = head;
+
+  while (cur) {
+    if (seenIds.has(cur.id)) {
+      errors.push({
+        path: cur.id,
+        code: "spec_violation",
+        message: `剧本链出现环或重复段 ${cur.id}`,
+      });
+      break;
+    }
+    seenIds.add(cur.id);
+    errors.push(...validateSegment(cur, fps));
+    cur = cur.next;
+  }
+  return errors;
+}
+
+function validateSegment(
+  scene: SceneInternal<unknown>,
+  fps: number,
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const recorder = new Recorder(
+    0,
+    0,
+    fps,
+    true,
+    null as unknown as Recorder["canvas"],
+  );
+  try {
+    scene.body(undefined as never, recorder);
+  } catch (e) {
+    return [
+      {
+        path: scene.id,
+        code: "spec_violation",
+        message: `body 干跑抛错：${(e as Error).message}`,
+      },
+    ];
+  }
+  const spawnKeys = new Set<string>();
+  checkNodes(
+    scene.id,
+    recorder.nodes,
+    0 as Ms,
+    scene.duration,
+    errors,
+    spawnKeys,
+  );
+  return errors;
+}
+
+function checkNodes(
+  path: string,
+  nodes: SimNode[],
+  base: Ms,
+  windowEnd: Ms,
+  errors: ValidationError[],
+  spawnKeys: Set<string>,
+): void {
+  let cursor: Ms = base;
+  for (const n of nodes) {
+    switch (n.kind) {
+      case "step": {
+        const start = cursor + (n.at ?? 0);
+        if (start < 0)
+          errors.push({
+            path,
+            code: "spec_violation",
+            message: `step at=${n.at} 使起点为负`,
+          });
+        if (start >= windowEnd || start + n.duration > windowEnd + 1e-6) {
+          errors.push({
+            path,
+            code: "window_overflow",
+            message: `step 窗口 [${start}, ${start + n.duration}) 越段窗 [${base}, ${windowEnd})`,
+          });
+        }
+        cursor += n.duration;
+        break;
+      }
+      case "wait":
+        cursor += n.duration;
+        break;
+      case "loop":
+        if (n.ms !== undefined)
+          cursor += Math.min(n.ms * (n.times ?? Infinity), windowEnd - cursor);
+        break;
+      case "par": {
+        let maxPool: Ms = 0;
+        for (const branch of n.children) {
+          const subKeys = spawnKeys; // 段内 spawn key 检查贯穿分支
+          checkNodes(`${path}/par`, branch, cursor, windowEnd, errors, subKeys);
+          // 分支池：分支内最后一个节点后的 cursor 偏移（wait-only 分支为 0）
+          maxPool = Math.max(maxPool, branchCursorEnd(branch, cursor) - cursor);
+        }
+        cursor += maxPool;
+        break;
+      }
+      case "spawn":
+        if (spawnKeys.has(n.options.key)) {
+          errors.push({
+            path,
+            code: "spec_violation",
+            message: `spawn key "${n.options.key}" 段内重复（同 key 去重通道被二义使用）`,
+          });
+        }
+        spawnKeys.add(n.options.key);
+        break;
+      case "transition":
+        return; // 提前收窗：其后节点不活跃，不再检查
+      case "audio":
+        break;
+    }
+  }
+}
+
+/** 分支展平后的终点 cursor（不含 par 嵌套误差——渲染期 evaluator 为精确账本） */
+function branchCursorEnd(branch: SimNode[], base: Ms): Ms {
+  let c: Ms = base;
+  for (const n of branch) {
+    if (n.kind === "step" || n.kind === "wait") c += n.duration;
+    else if (n.kind === "loop" && n.ms !== undefined)
+      c += Math.min(n.ms * (n.times ?? Infinity), Number.MAX_SAFE_INTEGER);
+  }
+  return c;
+}

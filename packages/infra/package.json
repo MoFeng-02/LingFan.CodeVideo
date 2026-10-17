@@ -1,0 +1,15 @@
+{
+  "name": "@lingfan-video/infra",
+  "version": "0.1.0",
+  "description": "Code Video 基础设施适配器：帧序列导出器与内存帧接收器",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lingfan-video/contracts": "workspace:*"
+  }
+}

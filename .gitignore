@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+out/
+*.mp4
+*.webm
+.dsh-acl-recovery/

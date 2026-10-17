@@ -1,0 +1,7 @@
+# workspace 清单：仅 packages/ 下的目录是包；examples/ 与 tests/ 留在根目录、不是包（规约 14 号 §1）
+packages:
+  - packages/*
+
+# pnpm v12：构建脚本白名单（v0.1 仅 esbuild 需要 postinstall）
+onlyBuiltDependencies:
+  - esbuild
