@@ -22,8 +22,14 @@ export interface FrameSink {
 }
 
 /**
- * 帧像素来源：把「这一刻画布上画了什么」取成位图交给引擎。
- * 单一事实来源是绘制目标本身（ctx.canvas）——缺省实现即从画布 2D 上下文回读；
- * GPU/离屏/自定义合成路径注入自己的实现（自绘纹理、后处理）。
+ * 帧像素来源：把「这一刻宿主画面上是什么」取成位图交给引擎。
+ * 缺省实现是从 2D 画布回读（同步）；GPU/离屏/自定义合成路径注入自己的实现。
+ *
+ * 可以返回 Promise：DOM/HTML/React/Vue 这类宿主没有同步抓帧能力（栅格化要等一次
+ * 排版与绘制），GPU 读回与跨进程宿主同理。引擎会等待该 Promise 再交帧，
+ * 因此异步宿主不会挤掉帧、也不会读到上一帧的半成品。
  */
-export type FrameSource = (frame: FrameIndex, timestampMs: Ms) => FrameBitmap;
+export type FrameSource = (
+  frame: FrameIndex,
+  timestampMs: Ms,
+) => FrameBitmap | Promise<FrameBitmap>;

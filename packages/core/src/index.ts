@@ -70,12 +70,14 @@ function assemble(opts: RenderOptions): {
     input: opts.input,
     seed: opts.seed,
   });
-  // 帧像素来源：单一事实来源是绘制目标本身（step 回调画在 canvas 上，帧从画布回读）。
-  // 注入 painter = GPU/离屏/自定义合成路径自绘；缺省 = 2D 回读；
+  // 帧像素来源：单一事实来源是宿主画面。注入 painter = 宿主自绘（可同步，也可返回
+  // Promise：DOM/Vue/React 栅格化、GPU 读回）；缺省 = 2D 回读；
   // 两者都没有时**不得静默交空白帧**：缺省直接 spec_violation，只有显式 frames:"allow-blank" 才给占位位图。
-  engine.setPainter(
-    opts.painter ?? readbackPainter(canvas, opts) ?? placeholderPainter(opts),
-  );
+  if (opts.painter) engine.setFrameSource(opts.painter);
+  else
+    engine.setPainter(
+      readbackPainter(canvas, opts) ?? placeholderPainter(opts),
+    );
   return { engine, canvas };
 }
 

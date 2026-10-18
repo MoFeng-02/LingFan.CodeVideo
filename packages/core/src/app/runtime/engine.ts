@@ -2,6 +2,7 @@ import type {
   FrameBitmap,
   FrameIndex,
   FrameSink,
+  FrameSource,
   FrameState,
   Ms,
 } from "@lingfan-video/contracts";
@@ -136,15 +137,28 @@ export class TimelineEngine {
   private readonly state: TimelineState;
   private readonly aggregator = new StateAggregator();
   private painter:
-    ((f: FrameIndex, t: Ms, state: FrameState) => FrameBitmap) | null = null;
+    | ((
+        f: FrameIndex,
+        t: Ms,
+        state: FrameState,
+      ) => FrameBitmap | Promise<FrameBitmap>)
+    | null = null;
 
   constructor(opts: TimelineState["opts"]) {
     this.state = makeState(opts);
   }
 
-  /** 注入帧位图来源（infra/capture 组装；引擎不认平台 API，未装配 → spec_violation） */
+  /** 注入同步帧位图来源（2D 回读 / 自绘纹理；未装配 → spec_violation） */
   setPainter(p: (f: FrameIndex, t: Ms) => FrameBitmap): void {
     this.painter = p;
+  }
+
+  /**
+   * 注入可等待的帧来源：宿主没有同步抓帧能力时用（DOM/HTML/React/Vue 栅格化、
+   * GPU 读回、跨进程宿主）。引擎在每帧边界等它完成，再交帧。
+   */
+  setFrameSource(source: FrameSource): void {
+    this.painter = (f, t) => source(f, t);
   }
 
   /** 正片渲染：沿采样网格逐点求值并交帧；运行期 spawn 新增链 → 重建剩余网格（动态流式采样） */
@@ -168,11 +182,12 @@ export class TimelineEngine {
       const t = grid[idx]!; // 网格点已是毫秒
       this.evaluateFrame(written, t);
       this.syncBusParams(t);
-      await sink.writeFrame(
-        this.painterPaint(written, t, this.aggregator.snapshot()),
+      const bitmap = await this.painterPaint(
         written,
         t,
+        this.aggregator.snapshot(),
       );
+      await sink.writeFrame(bitmap, written, t);
       written++;
       onProgress?.(written, grid.length);
       idx++;
@@ -264,7 +279,11 @@ export class TimelineEngine {
     };
   }
 
-  private painterPaint(f: FrameIndex, t: Ms, state: FrameState): FrameBitmap {
+  private async painterPaint(
+    f: FrameIndex,
+    t: Ms,
+    state: FrameState,
+  ): Promise<FrameBitmap> {
     if (!this.painter)
       throw makeRenderError(
         "spec_violation",
@@ -272,6 +291,6 @@ export class TimelineEngine {
         t,
         "未装配 Painter（infra/capture）",
       );
-    return this.painter(f, t, state);
+    return await this.painter(f, t, state);
   }
 }

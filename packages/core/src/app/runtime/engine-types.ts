@@ -150,5 +150,9 @@ export interface TimelineState {
 export interface EvalDeps {
   state: TimelineState;
   aggregator: import("../../domain/simulation").StateAggregator;
-  painterPaint: (f: FrameIndex, t: Ms, state: FrameState) => FrameBitmap;
+  painterPaint: (
+    f: FrameIndex,
+    t: Ms,
+    state: FrameState,
+  ) => FrameBitmap | Promise<FrameBitmap>;
 }
