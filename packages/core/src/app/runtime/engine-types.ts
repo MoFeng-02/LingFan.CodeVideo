@@ -6,7 +6,7 @@ import type {
   BusPoint,
   BusSpec,
   DuckRule,
-  FrameBitmap,
+  FrameCarrier,
   FrameIndex,
   FrameState,
   InputEvent,
@@ -180,5 +180,5 @@ export interface EvalDeps {
     f: FrameIndex,
     t: Ms,
     state: FrameState,
-  ) => FrameBitmap | Promise<FrameBitmap>;
+  ) => FrameCarrier | Promise<FrameCarrier>;
 }

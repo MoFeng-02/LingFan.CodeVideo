@@ -65,3 +65,5 @@ export {
   timelineMsAtSource,
 } from "./audio/warp";
 export type { ResolvedWarp, WarpRateSegment } from "./audio/warp";
+export * from "./frames";
+export { CanvasBlitExporter } from "./preview/canvas-blit-exporter";

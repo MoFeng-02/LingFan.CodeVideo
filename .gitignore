@@ -11,3 +11,8 @@ out/
 .rules.md
 .rules.ai.md
 agent.md
+/私有资源
+
+
+# 演示片用的音频素材（不进公开仓，示例按相对路径 /assets/song.mp3 加载）
+examples/browser/assets/

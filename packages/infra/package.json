@@ -5,11 +5,20 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./frames/adapters/three": "./src/frames/adapters/three.ts",
+    "./frames/adapters/three-compositor": "./src/frames/adapters/three-compositor.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "@lingfan-video/contracts": "workspace:*"
+    "@lingfan-video/contracts": "workspace:*",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0"
   }
 }

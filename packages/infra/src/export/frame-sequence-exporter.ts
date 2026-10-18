@@ -6,6 +6,7 @@ import type {
   ExportResult,
   Exporter,
   FrameBitmap,
+  FrameCarrier,
   Ms,
 } from "@lingfan-video/contracts";
 
@@ -19,7 +20,12 @@ export class FrameSequenceExporter implements Exporter {
   readonly format = "frames" as const;
   private readonly captured: CapturedFrame[] = [];
 
-  async writeFrame(frame: FrameBitmap, timestampMs: Ms): Promise<void> {
+  async writeFrame(frame: FrameCarrier, timestampMs: Ms): Promise<void> {
+    if (frame.kind === "handle")
+      throw new Error(
+        "FrameSequenceExporter 需要 CPU 像素，而本帧是设备句柄（FrameHandle）：" +
+          "要取像素请让宿主返回位图（painter 侧回读），要出片请改用 WebCodecsExporter。",
+      );
     this.captured.push({ frame, timestampMs });
   }
 

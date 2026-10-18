@@ -3,6 +3,7 @@
  */
 import type {
   FrameBitmap,
+  FrameCarrier,
   FrameIndex,
   FrameSink,
   Ms,
@@ -13,7 +14,12 @@ export class MemoryFrameSink implements FrameSink {
   readonly indexes: FrameIndex[] = [];
   readonly timestamps: Ms[] = [];
 
-  writeFrame(frame: FrameBitmap, index: FrameIndex, timestampMs: Ms): void {
+  writeFrame(frame: FrameCarrier, index: FrameIndex, timestampMs: Ms): void {
+    if (frame.kind === "handle")
+      throw new Error(
+        "MemoryFrameSink 只收 CPU 位图：本帧是设备句柄（FrameHandle），" +
+          "内存收集无法持有设备资源。",
+      );
     this.frames.push(frame);
     this.indexes.push(index);
     this.timestamps.push(timestampMs);

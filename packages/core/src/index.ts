@@ -5,14 +5,17 @@
  */
 import type {
   AudioGraph,
+  AudioProgram,
   ComputeFns,
   ExportResult,
   Exporter,
   FrameBitmap,
+  FrameCarrier,
   FrameIndex,
   FrameSink,
   Ms,
   RenderOptions,
+  Scene,
   ValidateFn,
 } from "@lingfan-video/contracts";
 import { validate } from "./domain/validation";
@@ -167,6 +170,40 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
 };
 
 /**
+ * 音频程序编译参数：与 render 的同名选项同义。
+ *
+ * fps / 尺寸决定场景按什么帧率与画布登记，assets / seed 决定 setup 与随机流；
+ * 它们与 render 不一致时会得到另一份程序（声音数量乃至样本都可能不同）。
+ */
+export type AudioProgramOptions = Pick<
+  RenderOptions,
+  "fps" | "width" | "height" | "assets" | "seed"
+>;
+
+/**
+ * 编译音频程序：不渲染任何一帧，只把时间线登记完并取出交 `AudioOutput.begin` 的那份程序。
+ *
+ * 用途：预览端在页面加载时配合 `WebAudioOutput.warm` 把整条配乐先合成好，
+ * 点播放时就不必逐个声部现算 PCM。与 render 走同一条登记/编译路径，
+ * 因此参数一致时两者得到的声音逐项相同。
+ */
+export async function compileAudioProgram(
+  scene: Scene<unknown>,
+  options: AudioProgramOptions,
+): Promise<AudioProgram> {
+  const engine = new TimelineEngine({
+    fps: options.fps,
+    width: options.width,
+    height: options.height,
+    canvas: makeHeadlessCanvas(options.width, options.height),
+    headless: true,
+    assets: options.assets ?? makeDefaultAssets(),
+    seed: options.seed,
+  });
+  return engine.compileAudioProgram(scene as SceneInternal<unknown>);
+}
+
+/**
  * 写音轨：程序（登记期 + 运行期声音）→ AudioClock 混合成样本 → exporter.writeAudio。
  * 有声音却没有音轨出口时报错，不静默丢掉声音。
  */
@@ -237,7 +274,7 @@ function exporterAdapter(exporter: Exporter): FrameSink & {
   let output: ExportResult | undefined;
   return {
     writeFrame(
-      frame: FrameBitmap,
+      frame: FrameCarrier,
       _index: FrameIndex,
       timestampMs: Ms,
     ): void | Promise<void> {

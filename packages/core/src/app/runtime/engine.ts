@@ -1,16 +1,19 @@
 import type {
-  FrameBitmap,
+  AudioProgram,
+  FrameCarrier,
   FrameHost,
   FrameHostInfo,
   FrameIndex,
   FrameSink,
   FrameState,
+  FrameSource,
   Ms,
   Painter,
 } from "@lingfan-video/contracts";
 import { StateAggregator } from "../../domain/simulation";
 import type { SceneEntry } from "../../domain/simulation/types";
 import { buildAudioGraph, flushBusUpdates } from "./audio-graph";
+import { buildAudioProgram } from "./audio-program";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { EMPTY_INPUT, createInputTrack } from "./input";
@@ -69,8 +72,8 @@ export class TimelineEngine {
     this.state = makeState(opts);
   }
 
-  /** 注入同步帧位图来源（2D 回读 / 自绘纹理；未装配 → spec_violation） */
-  setPainter(p: (f: FrameIndex, t: Ms) => FrameBitmap): void {
+  /** 注入同步帧来源（2D 回读 / 自绘 / 设备句柄；未装配 → spec_violation） */
+  setPainter(p: FrameSource): void {
     this.painter = p;
   }
 
@@ -106,11 +109,7 @@ export class TimelineEngine {
   ): Promise<RunSummary> {
     await this.buildTimeline(head);
     // 预览端：时间线建好即锚定起点并预排登记期声音；运行期发射由 ctx.audio 即时发声
-    await this.state.opts.audioOut?.begin({
-      durationMs: this.state.timelineEnd,
-      voices: this.state.audioVoices,
-      graph: buildAudioGraph(this.state, "timeline"),
-    });
+    await this.state.opts.audioOut?.begin(buildAudioProgram(this.state));
     // 有状态宿主：每次推演重新建场（重播不得沿用上一次的物理/时钟状态）。
     // begin 失败即整个推演失败，不交任何帧，也不调 close（宿主没开过）。
     const host = this.host();
@@ -141,6 +140,18 @@ export class TimelineEngine {
     return summary!;
   }
 
+  /**
+   * 只编译不推演：时间线登记完成即返回 `run` 会交给 `AudioOutput.begin` 的同一份程序。
+   *
+   * 不渲染任何帧、不碰输出设备——用途是让预览端在页面加载时预热整条配乐的 PCM
+   * （见 `WebAudioOutput.warm`）。程序与随后 `run` 得到的逐项相同：两者走同一条
+   * 登记/编译路径，只是 `run` 还会在其后继续逐帧推演。
+   */
+  async compileAudioProgram(head: SceneEntry): Promise<AudioProgram> {
+    await this.buildTimeline(head);
+    return buildAudioProgram(this.state);
+  }
+
   /** 逐点求值 + 交帧主循环（打帧源生命周期与错误收口都由 run 负责） */
   private async renderGrid(
     sink: FrameSink,
@@ -154,12 +165,14 @@ export class TimelineEngine {
       const t = grid[idx]!; // 网格点已是毫秒
       this.evaluateFrame(written, t);
       this.syncBusParams(t);
-      const bitmap = await this.painterPaint(
+      const carrier = await this.painterPaint(
         written,
         t,
         this.aggregator.snapshot(),
       );
-      await sink.writeFrame(bitmap, written, t);
+      await sink.writeFrame(carrier, written, t);
+      // 所有权已随交帧转移：引擎是本帧载体的最后一站，设备资源在这里归还
+      if (carrier.kind === "handle") carrier.close();
       written++;
       onProgress?.(written, grid.length);
       idx++;
@@ -260,7 +273,7 @@ export class TimelineEngine {
     f: FrameIndex,
     t: Ms,
     _state: FrameState,
-  ): Promise<FrameBitmap> {
+  ): Promise<FrameCarrier> {
     const painter = this.painter;
     if (!painter)
       throw makeRenderError(

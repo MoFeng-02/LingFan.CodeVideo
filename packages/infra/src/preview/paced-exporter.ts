@@ -12,7 +12,7 @@ import type {
   ExportResult,
   Exporter,
   ExporterImpl,
-  FrameBitmap,
+  FrameCarrier,
   Ms,
 } from "@lingfan-video/contracts";
 
@@ -43,8 +43,8 @@ export class PacedPreviewExporter implements Exporter {
     this.stallFallbackMs = opts.stallFallbackMs ?? 2000;
   }
 
-  async writeFrame(frame: FrameBitmap, timestampMs: Ms): Promise<void> {
-    void frame; // 位图不参与显示（可见画面来自 step 在宿主画布上的直接绘制）
+  async writeFrame(frame: FrameCarrier, timestampMs: Ms): Promise<void> {
+    void frame; // 载体不参与显示（可见画面来自 step 在宿主画布上的直接绘制）
     if (this.anchor === null) {
       this.wallBase = performance.now();
       // 时钟零点是「时间线 0」：音频时钟在 begin 锚点前可能为负（预排提前量），

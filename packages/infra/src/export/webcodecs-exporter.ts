@@ -9,6 +9,8 @@ import type {
   ExportResult,
   Exporter,
   FrameBitmap,
+  FrameCarrier,
+  FrameHandle,
   Ms,
 } from "@lingfan-video/contracts";
 import { Mp4Muxer, extractParameterSets, makeAacConfig, makeAvcC } from "./mp4";
@@ -50,7 +52,7 @@ export class WebCodecsExporter implements Exporter {
     this.opts = opts;
   }
 
-  async writeFrame(frame: FrameBitmap, timestampMs: Ms): Promise<void> {
+  async writeFrame(frame: FrameCarrier, timestampMs: Ms): Promise<void> {
     this.assertOpen("writeFrame");
     if (typeof VideoFrame === "undefined")
       throw new Error(
@@ -65,17 +67,48 @@ export class WebCodecsExporter implements Exporter {
     this.lastTimestampUs = timestampUs;
     this.durationMs = timestampMs;
 
-    const videoFrame = new VideoFrame(frame.data.buffer, {
+    // 句柄帧走设备侧：不读像素、不上传，直接交给编码器（时间戳仍由时间线决定，
+    // 所以这里用时间线的值重建一个引用，保证同一剧本得到同一串时间戳）。
+    const videoFrame = this.frameToVideoFrame(frame, timestampUs, durationUs);
+    try {
+      this.videoEncoder!.encode(videoFrame, {
+        keyFrame: this.count % 60 === 0,
+      });
+    } finally {
+      videoFrame.close();
+    }
+    this.count++;
+    await this.drain(this.videoEncoder!);
+  }
+
+  /** 载体 → VideoFrame：位图必须拷贝一次（它本来就是 CPU 像素），句柄则借用设备侧对象 */
+  private frameToVideoFrame(
+    frame: FrameCarrier,
+    timestampUs: number,
+    durationUs: number,
+  ): VideoFrame {
+    if (frame.kind === "handle") {
+      const source = (frame as FrameHandle).native as
+        VideoFrame | CanvasImageSource;
+      if (typeof VideoFrame !== "undefined" && source instanceof VideoFrame) {
+        return new VideoFrame(source, {
+          timestamp: timestampUs,
+          duration: durationUs,
+        });
+      }
+      return new VideoFrame(source as CanvasImageSource, {
+        timestamp: timestampUs,
+        duration: durationUs,
+      });
+    }
+    const bitmap: FrameBitmap = frame;
+    return new VideoFrame(bitmap.data.buffer, {
       format: "RGBA",
       codedWidth: this.opts.width,
       codedHeight: this.opts.height,
       timestamp: timestampUs,
       duration: durationUs,
     });
-    this.videoEncoder!.encode(videoFrame, { keyFrame: this.count % 60 === 0 });
-    videoFrame.close();
-    this.count++;
-    await this.drain(this.videoEncoder!);
   }
 
   /**

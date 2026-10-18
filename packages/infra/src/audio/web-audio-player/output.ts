@@ -46,6 +46,10 @@ export class WebAudioOutput implements AudioOutput {
   private startedAtSec = 0;
   private latencyMs = 0;
   private readonly loaded = new Map<string, Promise<AudioBuffer>>();
+  /** 已备好的单个声音 PCM（预热与正式播放共用：同一份样本只算一次） */
+  private readonly pcmCache = new Map<string, Promise<PcmPayload>>();
+  /** 预热中的 worker 模块（幂等；失败即清空，下次调用重新加载） */
+  private prepared: Promise<void> | null = null;
 
   constructor(
     private readonly ctx: AudioContext,
@@ -53,16 +57,57 @@ export class WebAudioOutput implements AudioOutput {
     private readonly options?: WebAudioOutputOptions,
   ) {}
 
-  /** 锚定时间线起点：加载 worker、投递整条程序、等待音频线程开声 */
-  async begin(program: AudioProgram): Promise<void> {
-    this.dispose();
+  /**
+   * 预热：把 worker 模块取回并编译好，可以播放在用户操作之前。
+   *
+   * 为什么值得单列：模块加载与编译在开发服务器上可达秒级，而 `begin` 要等它完成才
+   * 能把第一帧放出来——不预热，观众看到的是「点了播放没反应」。幂等：重复调用共用
+   * 同一个 Promise，`begin` 也走这条路径，因此重播不会再等一次。失败不缓存（下次
+   * 调用重试），错误照旧抛给调用方。
+   */
+  prepare(): Promise<void> {
+    if (this.prepared === null) {
+      this.prepared = this.loadWorklet().catch((error: unknown) => {
+        this.prepared = null;
+        throw error;
+      });
+    }
+    return this.prepared;
+  }
+
+  /** 只负责把模块取回并编译；节点与程序留给 `begin`（预热不占音频线程） */
+  private async loadWorklet(): Promise<void> {
     if (this.ctx.audioWorklet === undefined)
       throw new Error(
         "预览端需要 AudioWorklet：当前音频上下文不支持，无法与导出端共用同一份 DSP",
       );
-    this.latencyMs = this.measureLatencyMs();
     const url = String(this.options?.workletUrl ?? DEFAULT_WORKLET_URL);
     await this.ctx.audioWorklet.addModule(url);
+  }
+
+  /**
+   * 预热：把程序里每个声部的 PCM 解码/合成好放进缓存，可以放在用户点播放之前。
+   *
+   * 预热只填缓存；真正开始播放仍由 begin() 负责——这里不建 AudioWorkletNode、
+   * 不出声、也不动时间线锚点（nowMs 保持调用前的值），因此任何时刻调用都安全。
+   * 幂等：重复调用命中缓存不重算（素材按 url 缓存、synth 按参数缓存）；
+   * 任一声音失败即清空缓存并把错误抛给调用方，下一次调用从零重来。
+   */
+  async warm(program: AudioProgram): Promise<void> {
+    try {
+      await Promise.all(program.voices.map((voice) => this.pcmOf(voice)));
+    } catch (error) {
+      this.pcmCache.clear();
+      this.loaded.clear();
+      throw error;
+    }
+  }
+
+  /** 锚定时间线起点：模块就绪后投递整条程序、等音频线程开声 */
+  async begin(program: AudioProgram): Promise<void> {
+    this.dispose();
+    this.latencyMs = this.measureLatencyMs();
+    await this.prepare();
     const node = new AudioWorkletNode(this.ctx, MIXER_PROCESSOR, {
       numberOfInputs: 0,
       numberOfOutputs: 1,
@@ -70,7 +115,8 @@ export class WebAudioOutput implements AudioOutput {
     });
     this.node = node;
     const payloads: { voice: AudioVoice; pcm: PcmPayload }[] = [];
-    for (const voice of program.voices) payloads.push(await this.pcmOf(voice));
+    for (const voice of program.voices)
+      payloads.push({ voice, pcm: await this.pcmOf(voice) });
     node.port.postMessage({
       type: "init",
       sampleRate: this.ctx.sampleRate,
@@ -110,8 +156,8 @@ export class WebAudioOutput implements AudioOutput {
         this.post({ type: "rate", voiceId: voice.id, atMs, value }),
     };
     void this.pcmOf(voice)
-      .then((payload) => {
-        const message = voiceMessage(payload);
+      .then((pcm) => {
+        const message = voiceMessage({ voice, pcm });
         this.node?.port.postMessage(message.data, message.transfer);
       })
       .catch(() => {
@@ -178,30 +224,55 @@ export class WebAudioOutput implements AudioOutput {
     return p;
   }
 
-  /** 单个声音的 PCM：synth 现场合成，素材走加载器后转成交错布局 */
-  private async pcmOf(
-    voice: AudioVoice,
-  ): Promise<{ voice: AudioVoice; pcm: PcmPayload }> {
-    if (voice.synth) {
-      const pcm = renderSynth(voice.synth, this.ctx.sampleRate, CHANNELS);
-      return { voice, pcm };
-    }
+  /**
+   * 单个声音的 PCM（缓存）：synth 现场合成，素材走加载器后转成交错布局。
+   * 预热与播放取的是同一份缓存——重复播放不必重算整条配乐。
+   */
+  private pcmOf(voice: AudioVoice): Promise<PcmPayload> {
+    const key = pcmKey(voice);
+    const hit = this.pcmCache.get(key);
+    if (hit) return hit;
+    const pending = this.decodePcm(voice).catch((error: unknown) => {
+      // 失败不留在缓存里：下次调用（预热或 begin/start）重新解码
+      if (this.pcmCache.get(key) === pending) this.pcmCache.delete(key);
+      throw error;
+    });
+    this.pcmCache.set(key, pending);
+    return pending;
+  }
+
+  /** 真正的解码/合成（不含缓存：synth 现场算，素材经加载器） */
+  private async decodePcm(voice: AudioVoice): Promise<PcmPayload> {
+    if (voice.synth)
+      return renderSynth(voice.synth, this.ctx.sampleRate, CHANNELS);
     const buffer = await this.bufferOf(voice.clip.url);
-    return { voice, pcm: interleave(buffer, this.ctx.sampleRate, CHANNELS) };
+    return interleave(buffer, this.ctx.sampleRate, CHANNELS);
   }
 }
 
-/** 声音消息：PCM 缓冲以转移方式交给音频线程（不复制） */
+/**
+ * PCM 缓存键：样本只由「合成参数」或「素材 url」决定（采样率与声道数是实例常量），
+ * 与声部 id 无关——预热用的程序与正式推演是两次编译，声部对象不同但样本相同。
+ */
+function pcmKey(voice: AudioVoice): string {
+  return voice.synth
+    ? `synth:${JSON.stringify(voice.synth)}`
+    : `clip:${voice.clip.url}`;
+}
+
+/** 声音消息：PCM 缓冲以转移方式交给音频线程（缓存那份要留给重播，先复制） */
 function voiceMessage(payload: { voice: AudioVoice; pcm: PcmPayload }): {
   data: MixerMessage;
   transfer: Transferable[];
 } {
-  const data: MixerMessage = {
-    type: "voice",
-    voice: payload.voice,
-    pcm: payload.pcm,
+  const pcm: PcmPayload = {
+    data: payload.pcm.data.slice(),
+    sampleRate: payload.pcm.sampleRate,
+    channels: payload.pcm.channels,
+    durationMs: payload.pcm.durationMs,
   };
-  return { data, transfer: [payload.pcm.data.buffer] };
+  const data: MixerMessage = { type: "voice", voice: payload.voice, pcm };
+  return { data, transfer: [pcm.data.buffer] };
 }
 
 /** AudioBuffer → 交错 PCM（声道不足复制、过多取前两路；采样率不同则线性重采样） */

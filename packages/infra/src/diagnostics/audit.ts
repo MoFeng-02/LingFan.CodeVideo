@@ -5,16 +5,48 @@
  */
 import type {
   FrameBitmap,
+  FrameCarrier,
   FrameIndex,
   FrameSink,
   Ms,
 } from "@lingfan-video/contracts";
+import { isFrameHandle } from "../frames/carrier";
 import { frameFingerprint, sequenceFingerprint } from "./hash";
 
 export interface FrameHash {
   readonly index: FrameIndex;
   readonly timestampMs: Ms;
   readonly fingerprint: string;
+}
+
+/**
+ * 载体指纹：位图直算；设备句柄只有「原生对象是 2D 画布」时才能回读，
+ * 其余情况明确报错——确定性校验不接受「静默当成同一帧」。
+ */
+function carrierFingerprint(frame: FrameCarrier): string {
+  if (!isFrameHandle(frame)) return frameFingerprint(frame);
+  const native = frame.native as { getContext?: (id: string) => unknown };
+  const g = native.getContext?.("2d") as
+    | {
+        getImageData?: (
+          x: number,
+          y: number,
+          w: number,
+          h: number,
+        ) => ImageData;
+      }
+    | undefined;
+  const pixels = g?.getImageData?.(0, 0, frame.width, frame.height);
+  if (!pixels) {
+    throw new Error(
+      "确定性指纹需要 CPU 像素：设备侧句柄不是 2D 画布，无法回读——请让后端交位图，或改在编码前旁路取样",
+    );
+  }
+  return frameFingerprint({
+    data: pixels.data,
+    width: frame.width,
+    height: frame.height,
+  });
 }
 
 /** 旁路 sink：逐帧记指纹，像素原样转交下游（可接 MemoryFrameSink / 编码器） */
@@ -24,14 +56,14 @@ export class FrameHasher implements FrameSink {
   constructor(private readonly downstream?: FrameSink) {}
 
   writeFrame(
-    frame: FrameBitmap,
+    frame: FrameCarrier,
     index: FrameIndex,
     timestampMs: Ms,
   ): void | Promise<void> {
     this.hashes.push({
       index,
       timestampMs,
-      fingerprint: frameFingerprint(frame),
+      fingerprint: carrierFingerprint(frame),
     });
     return this.downstream?.writeFrame(frame, index, timestampMs);
   }
