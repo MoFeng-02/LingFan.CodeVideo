@@ -51,7 +51,13 @@ export type SimNode =
       };
       anchor: Ms;
     }
-  | { kind: "transition"; next: Scene<unknown>; anchor: Ms }
+  | {
+      kind: "transition";
+      next: Scene<unknown>;
+      anchor: Ms;
+      /** 重叠窗（毫秒）：下一段提前这么多开始，窗口内两段同时活跃 */
+      overlapMs?: Ms;
+    }
   | {
       kind: "audio";
       clip: AudioClip;
@@ -158,6 +164,8 @@ export interface CompiledSegment {
   activeEnd?: Ms;
   /** transitionTo 的目标片段（由 compile 从节点流透出，runtime 链式推进用） */
   transitionNext?: unknown;
+  /** 过场重叠窗（毫秒）：下一段提前这么多开始；undefined = 硬切 */
+  transitionOverlap?: Ms;
   /** body 返回值（成为链上下一幕 body 的 prev 参数） */
   bodyResult: unknown;
 }

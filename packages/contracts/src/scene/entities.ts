@@ -30,6 +30,20 @@ export interface CanvasEnv {
 }
 
 /**
+ * 过场选项。缺省 = 硬切：本段在 anchor 收窗、下一段从 anchor 开始，任何时刻只有一段活跃。
+ * 给了 overlapMs = 重叠窗：下一段提前 overlapMs 开始，窗口内两段同时求值、下一段后绘制。
+ * 两段共享这段时长是唯一的代价（总长 = 两段之和 − overlap），换来真正的叠化/擦除——
+ * 不需要任何一段画遮盖，也不需要绝对时间对齐。
+ */
+export interface TransitionOptions {
+  /**
+   * 重叠时长（毫秒）：必须 > 0、不大于本段收窗长度、不大于下一段长度。
+   * 重叠窗内两段各自按自己的本地时间推进（下一段 localT 从 0 开始）。
+   */
+  readonly overlapMs?: Ms;
+}
+
+/**
  * 登记阶段环境。
  * 设计决定：step/loop/par/wait/transitionTo 以 SceneEnv 成员形式提供——
  * 显式上下文、避免隐式注册作用域。
@@ -49,7 +63,7 @@ export interface SceneEnv extends CanvasEnv {
   spawn<S>(scene: Scene<S>, options: SpawnOptions): Handle;
   /** 纯时间推进（自身不产帧）；给 onUpdate 则「有帧时逐帧回调」 */
   wait(duration: Ms, onUpdate?: WaitFn, options?: WaitOptions): void;
-  transitionTo(next: Scene<unknown>): void;
+  transitionTo(next: Scene<unknown>, options?: TransitionOptions): void;
   /**
    * 登记期音频声明：起点 = 登记位置 + at；不消耗帧窗池、不改 step 模型。
    * 运行期发声与操作走 StepContext/LoopContext.audio（拿 AudioHandle）。

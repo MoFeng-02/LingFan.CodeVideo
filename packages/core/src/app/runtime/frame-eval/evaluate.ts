@@ -2,7 +2,7 @@ import type { FrameIndex, Ms } from "@lingfan-video/contracts";
 import { sampleBuses } from "../audio-graph";
 import { applyAutomation } from "../bus-automation";
 import type { ChainSpan, EvalDeps, SpawnChain } from "../engine-types";
-import { findSpan, findSpanLooping } from "../timeline-build";
+import { findSpans, findSpansLooping } from "../timeline-build";
 import {
   evalLoopIter,
   evalSelfPacedLoop,
@@ -25,11 +25,11 @@ export function evaluateFrame(deps: EvalDeps, f: FrameIndex, t: Ms): void {
     // 消亡窗口到期 = 真正出池
     if (c.dyingUntil !== undefined && t >= c.dyingUntil) continue;
     // forever 链内容播完后循环重放（回卷 span）；一次性链照常查
-    const span = findSpanLooping(c, t);
-    if (span) ordered.push({ chain: c, span });
+    for (const span of findSpansLooping(c, t)) ordered.push({ chain: c, span });
   }
-  const main = findSpan(state.spans, t);
-  if (main) ordered.push({ chain: null, span: main });
+  // 主链可能有多段同时活跃（transitionTo 的重叠窗）：按链上顺序逐段求值
+  for (const span of findSpans(state.spans, t))
+    ordered.push({ chain: null, span });
 
   for (const { chain, span } of ordered) {
     const localT = t - span.start;

@@ -7,6 +7,7 @@ import type {
 } from "@lingfan-video/contracts";
 import { synthVoiceOptions } from "../audio/synth-voice";
 import { SYNTH_CLIP } from "../audio/synth-clip";
+import { violation } from "../spec-violation";
 import type { SceneInternal, SimNode } from "./types";
 import type {
   CompiledAudio,
@@ -44,6 +45,7 @@ export function compileSegment(
   const automations: BusAutomationSpec[] = [];
   let activeEnd: Ms | undefined;
   let transitionNext: unknown;
+  let transitionOverlap: Ms | undefined;
   let order = 0;
   /** 有效帧率解析：本节点声明优先，否则用外层继承 */
   const effFps = (declared?: number): number =>
@@ -161,6 +163,11 @@ export function compileSegment(
         case "transition": {
           activeEnd = local;
           transitionNext = n.next;
+          transitionOverlap = n.overlapMs;
+          if (transitionOverlap !== undefined && transitionOverlap >= local)
+            throw violation(
+              `${sceneId} 的 transitionTo 重叠窗 ${transitionOverlap}ms 不能吃满整段（本段收窗长度 ${local}ms）`,
+            );
           break;
         }
         case "audio": {
@@ -217,6 +224,7 @@ export function compileSegment(
     automations,
     activeEnd,
     transitionNext,
+    transitionOverlap,
     bodyResult,
   };
 }

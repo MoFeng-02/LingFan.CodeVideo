@@ -13,10 +13,12 @@ import type {
   StepFn,
   StepOptions,
   SynthSpec,
+  TransitionOptions,
   WaitFn,
   WaitOptions,
 } from "@lingfan-video/contracts";
 import { assertAutomation, assertSynth, loop as loopUntil } from "../audio";
+import { violation } from "../spec-violation";
 import type { SceneInternal, SimNode } from "./types";
 
 let sceneSeq = 0;
@@ -147,9 +149,22 @@ export class Recorder implements SceneEnv {
     this.cursor += duration;
   }
 
-  transitionTo(next: Scene<unknown>): void {
-    // 只登记 anchor（提前收窗点）；next 的链接语义由 compile 消费
-    this.nodes.push({ kind: "transition", next, anchor: this.cursor });
+  transitionTo(next: Scene<unknown>, options?: TransitionOptions): void {
+    const overlapMs = options?.overlapMs;
+    if (
+      overlapMs !== undefined &&
+      (!Number.isFinite(overlapMs) || overlapMs <= 0)
+    )
+      throw violation(
+        `transitionTo 的 overlapMs 必须是 > 0 的有限毫秒数（收到 ${overlapMs}）`,
+      );
+    // 只登记 anchor（提前收窗点）与重叠窗；next 的链接语义由 compile 消费
+    this.nodes.push({
+      kind: "transition",
+      next,
+      anchor: this.cursor,
+      ...(overlapMs === undefined ? {} : { overlapMs }),
+    });
   }
 
   audio(clip: AudioClip, options?: AudioOptions): void {

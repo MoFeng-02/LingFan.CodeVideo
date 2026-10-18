@@ -46,6 +46,7 @@ export async function buildTimeline(
 ): Promise<void> {
   resetTimeline(state);
   let start: Ms = 0;
+  let pendingOverlap: Ms = 0; // 上一段声明的重叠窗：本段提前这么多开始
   let cur: SceneEntry | undefined = head;
   let prev: unknown; // body(prev) 链式传参
   const seen = new Set<string>();
@@ -59,11 +60,24 @@ export async function buildTimeline(
     await ensureSetup(state, scene);
     const seg = compileScene(state, scene, prev);
     prev = seg.bodyResult;
-    const end = start + (seg.activeEnd ?? seg.duration);
+    const spanLen = seg.activeEnd ?? seg.duration;
+    if (pendingOverlap > 0) {
+      // 重叠窗是两段共享的时长：吃满整段就等于本段没有独立窗口
+      if (pendingOverlap >= spanLen)
+        throw makeRenderError(
+          "spec_violation",
+          cur.id,
+          start,
+          `重叠窗 ${pendingOverlap}ms 不小于本段长度 ${spanLen}ms（下一段会吞掉整段）`,
+        );
+      start -= pendingOverlap;
+    }
+    const end = start + spanLen;
     state.spans.push({ scene, seg, start, end });
     mergeSegmentGraph(state, seg);
     await expandSpawns(state, seg, start, 0);
     start = end;
+    pendingOverlap = seg.transitionOverlap ?? 0;
     cur = seg.transitionNext
       ? (seg.transitionNext as SceneInternal<unknown>)
       : cur.next;
@@ -307,6 +321,7 @@ export function buildChain(
     killed: false,
   };
   let cs = start;
+  let pendingOverlap: Ms = 0;
   let sc: SceneInternal<unknown> | undefined = head;
   let prev: unknown; // spawn 链独立于主链传参，起点 prev=undefined
   const seen = new Set<string>();
@@ -319,8 +334,19 @@ export function buildChain(
     prev = seg.bodyResult;
     // 链长 = 实际内容：声明池比单元窗口长时按窗口算（空池不算链长）
     const len = contentEndOf(seg);
+    if (pendingOverlap > 0) {
+      if (pendingOverlap >= len)
+        throw makeRenderError(
+          "spec_violation",
+          sc.id,
+          cs,
+          `重叠窗 ${pendingOverlap}ms 不小于本段长度 ${len}ms（下一段会吞掉整段）`,
+        );
+      cs -= pendingOverlap;
+    }
     chain.spans.push({ scene: sc, seg, start: cs, end: cs + len });
     cs += len;
+    pendingOverlap = seg.transitionOverlap ?? 0;
     sc = (seg.transitionNext as SceneInternal<unknown> | undefined) ?? sc.next;
   }
   if (duration !== Infinity) chain.end = cs; // 修正估算链长（transition 短路虚高）
@@ -328,9 +354,28 @@ export function buildChain(
   return chain;
 }
 
-/** span 活跃判定：t 落在 [start,end) 内 */
+/** span 活跃判定：t 落在 [start,end) 内（重叠窗内可能有多段同时活跃） */
 export function findSpan(spans: ChainSpan[], t: Ms): ChainSpan | undefined {
   return spans.find((s) => t >= s.start && t < s.end);
+}
+
+/** 全部活跃 span，按链上顺序返回（重叠窗内两段都在，后者后绘制） */
+export function findSpans(spans: ChainSpan[], t: Ms): ChainSpan[] {
+  const active: ChainSpan[] = [];
+  for (const s of spans) if (t >= s.start && t < s.end) active.push(s);
+  return active;
+}
+
+/** forever 链的活跃 span：正常窗口，或内容播完后按内容时长回卷（重叠窗同样成立） */
+export function findSpansLooping(chain: SpawnChain, t: Ms): ChainSpan[] {
+  const active = findSpans(chain.spans, t);
+  if (active.length > 0) return active;
+  const last = chain.spans[chain.spans.length - 1];
+  if (!last) return [];
+  const contentLen = last.end - chain.start;
+  if (!(contentLen > 0)) return [];
+  const local = (t - chain.start) % contentLen;
+  return findSpans(chain.spans, chain.start + local);
 }
 
 /** forever 链 span 查找：t 超出内容总长后按链内容时长取模回卷（循环重放） */
