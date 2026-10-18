@@ -2,7 +2,7 @@ import type { FrameIndex, Ms } from "@lingfan-video/contracts";
 import { sampleBuses } from "../audio-graph";
 import { applyAutomation } from "../bus-automation";
 import type { ChainSpan, EvalDeps, SpawnChain } from "../engine-types";
-import { findSpans, findSpansLooping } from "../timeline-build";
+import { findSpans, findSpansLooping } from "../timeline-spans";
 import {
   evalLoopIter,
   evalSelfPacedLoop,
