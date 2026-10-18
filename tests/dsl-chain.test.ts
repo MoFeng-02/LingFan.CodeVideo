@@ -145,11 +145,18 @@ describe("setup 执行（StartSpec.setup）", () => {
     expect(summary.frames).toBe(15);
     expect(order).toEqual(["setup", "run"]);
 
-    // 异步 setup 拒绝
+    // 异步 setup：引擎等到它完成再构建时间线（资产加载发生在第一帧之前）
+    const events: string[] = [];
     const asyncScene = start({
-      window: 500,
-      setup: async () => {},
-      run: () => {},
+      window: 200,
+      setup: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        events.push("setup");
+      },
+      run: (env) => {
+        events.push("run");
+        env.step(100, () => {});
+      },
     });
     const engine2 = new TimelineEngine({
       fps: 60,
@@ -163,12 +170,12 @@ describe("setup 执行（StartSpec.setup）", () => {
       width: 1,
       height: 1,
     }));
-    await expect(
-      engine2.run(asyncScene, {
-        writeFrame: () => {},
-        finalize: async () => {},
-      }),
-    ).rejects.toThrow(/setup 返回 Promise.*确定性时间线/);
+    const asyncSummary = await engine2.run(asyncScene, {
+      writeFrame: () => {},
+      finalize: async () => {},
+    });
+    expect(events).toEqual(["setup", "run"]);
+    expect(asyncSummary.frames).toBe(6); // 100ms @60fps
     void validate;
   });
 

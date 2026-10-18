@@ -140,6 +140,8 @@ export interface TimelineState {
   random: RandomStream;
   /** 单元随机子流缓存：标签 → 流（同一单元跨帧连续抽取） */
   randomStreams: Map<string, RandomStream>;
+  /** 已完成 setup 的场景（每次推演复位；同一场景只跑一次 setup，资产只解码一次） */
+  setupDone: WeakSet<object>;
   /** 当前求值时间（句柄操作／alive 判定的时间轴依据） */
   nowMs: Ms;
   /** 是否处于回调执行中（句柄操作的合法窗口） */

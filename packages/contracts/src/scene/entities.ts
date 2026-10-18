@@ -1,5 +1,6 @@
 import type { Ms } from "../shared/units";
 import type { Handle, SpawnOptions } from "../scheduler";
+import type { AssetSource } from "../asset";
 import type {
   AudioClip,
   AudioOptions,
@@ -75,20 +76,13 @@ export interface SceneEnv extends CanvasEnv {
   automate(spec: BusAutomationSpec): void;
 }
 
-/** setup 阶段环境：资产解码同位进 setup；run 阶段拿不到 assets */
+/**
+ * setup 阶段环境：资产加载同位进 setup；run 阶段拿不到 assets。
+ *
+ * 资产种类与载荷由 `AssetSource` 一侧声明（`asset/entities`），这里只引用，不重复定义。
+ */
 export interface SetupEnv extends SceneEnv {
-  assets: AssetHooks;
-}
-
-/** 资产钩子：只提供 load */
-export interface AssetHooks {
-  load(url: string): Promise<AssetLike>;
-}
-
-/** 资产最小形态（ImageBitmap / AudioBuffer 等由适配器具体化） */
-export interface AssetLike {
-  readonly url: string;
-  readonly kind: "image" | "audio" | "data";
+  assets: AssetSource;
 }
 
 /** 剧本片段：不可变链，cutTo 返回新片段 */
@@ -115,7 +109,14 @@ export interface StartFn {
 /** spec 形式：setup 只跑一次（资产/解码），run 为登记体 */
 export interface StartSpec<P> {
   window: Ms;
-  /** setup 必须同步：资产解码在 render 前完成（返回 Promise 会被引擎拒绝） */
-  setup?: (env: SetupEnv) => void;
+  /**
+   * setup 在推演开始前跑一次：资产加载与解码都放这里。
+   *
+   * 可以返回 Promise——引擎会等它完成再构建时间线，因此帧序列仍然确定
+   * （等待发生在第一帧求值之前，不参与任何帧的时序）。
+   * 例外：运行期 `ctx.spawn` 的场景在帧内编译，不能等待 I/O；这类场景的 setup 必须是同步的，
+   * 否则引擎明确报 `spec_violation`。
+   */
+  setup?: (env: SetupEnv) => void | Promise<void>;
   run: (env: SceneEnv) => P | void;
 }

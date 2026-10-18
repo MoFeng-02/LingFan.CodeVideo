@@ -35,10 +35,15 @@ export function resetTimeline(state: TimelineState): void {
   state.timelineEnd = 0;
   state.nowMs = 0;
   state.inCallback = false;
+  // setup 每次推演重跑一次（资产按本次推演的解码器重新加载，跨推演不共享句柄）
+  state.setupDone = new WeakSet();
 }
 
 /** 主链时间线构建：成环检测、prev 链式传参、transition 优先、spawn 链展开 */
-export function buildTimeline(state: TimelineState, head: SceneEntry): void {
+export async function buildTimeline(
+  state: TimelineState,
+  head: SceneEntry,
+): Promise<void> {
   resetTimeline(state);
   let start: Ms = 0;
   let cur: SceneEntry | undefined = head;
@@ -50,12 +55,14 @@ export function buildTimeline(state: TimelineState, head: SceneEntry): void {
     seen.add(cur.id);
     // 结构入口 → 编译面：引擎只在链上推进，prev 的具体类型不参与
     const scene = cur as SceneInternal<unknown>;
+    // setup 先于 body：资产与解码只跑一次，且必须在任何帧求值之前完成
+    await ensureSetup(state, scene);
     const seg = compileScene(state, scene, prev);
     prev = seg.bodyResult;
     const end = start + (seg.activeEnd ?? seg.duration);
     state.spans.push({ scene, seg, start, end });
     mergeSegmentGraph(state, seg);
-    expandSpawns(state, seg, start, 0);
+    await expandSpawns(state, seg, start, 0);
     start = end;
     cur = seg.transitionNext
       ? (seg.transitionNext as SceneInternal<unknown>)
@@ -143,7 +150,7 @@ function materializeAutomation(state: TimelineState): void {
     installAutomation(state, bus, points);
   }
 }
-/** 编译单段：先跑 setup（资产/解码只跑一次）再跑 body 捕获节点流（每次出现都跑——prev 依出现上下文，不能按 id 缓存） */
+/** 编译单段：body 捕获节点流（每次出现都跑——prev 依出现上下文，不能按 id 缓存） */
 export function compileScene(
   state: TimelineState,
   scene: SceneInternal<unknown>,
@@ -151,17 +158,6 @@ export function compileScene(
   inheritedFps?: number,
 ): CompiledSegment {
   const { width, height, fps, headless, canvas } = state.opts;
-  if (scene.setup) {
-    const setupEnv = makeSetupEnv(state, scene);
-    const r = scene.setup(setupEnv);
-    if (r instanceof Promise)
-      throw makeRenderError(
-        "spec_violation",
-        scene.id,
-        0,
-        "setup 返回 Promise：确定性时间线不支持异步 setup（资产解码须在 render 前完成）",
-      );
-  }
   const rec = new Recorder(width, height, fps, headless, canvas);
   const result = scene.body(prev as never, rec);
   return compileSegment(
@@ -197,15 +193,70 @@ function makeSetupEnv(
   return Object.assign(rec, { assets: hooks });
 }
 
+/** thenable 判定（不用 instanceof：跨 realm 的 Promise 也要认） */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return typeof (value as { then?: unknown } | null)?.then === "function";
+}
+
+/**
+ * 构建期解析 setup：推演开始前完成资产加载等 I/O，之后逐帧求值全同步。
+ * 同一场景在本次推演里只跑一次 setup（资产只解码一次）。
+ */
+async function ensureSetup(
+  state: TimelineState,
+  scene: SceneInternal<unknown>,
+): Promise<void> {
+  if (!scene.setup || state.setupDone.has(scene)) return;
+  state.setupDone.add(scene);
+  const result = scene.setup(makeSetupEnv(state, scene));
+  if (isThenable(result)) await result;
+}
+
+/** 沿 next 链预解析 setup（next 已含 transition 目标）：同步 buildChain 之前必须做完 */
+export async function ensureSetupChain(
+  state: TimelineState,
+  head: SceneInternal<unknown>,
+): Promise<void> {
+  const seen = new Set<object>();
+  let cur: SceneInternal<unknown> | undefined = head;
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    await ensureSetup(state, cur);
+    cur = cur.next as SceneInternal<unknown> | undefined;
+  }
+}
+
+/**
+ * 同步解析 setup：运行期 spawn 走这条（帧内不得等待 I/O）。
+ * 异步 setup 的场景只能在构建期 spawn，否则明确报错——不静默丢资产。
+ */
+export function runSetupSync(
+  state: TimelineState,
+  scene: SceneInternal<unknown>,
+): void {
+  if (!scene.setup || state.setupDone.has(scene)) return;
+  state.setupDone.add(scene);
+  const result = scene.setup(makeSetupEnv(state, scene));
+  if (isThenable(result))
+    throw makeRenderError(
+      "spec_violation",
+      scene.id,
+      state.nowMs,
+      "场景 setup 返回 Promise：运行期 spawn 不能等待资产加载；请在登记期 spawn 该场景，或把 setup 写成同步",
+    );
+}
+
 /** 展开 spawn 链（编译期锚定的）；depth 帽 3（嵌套 spawn）。链登记由 buildChain 内完成，此处不再返回 */
-export function expandSpawns(
+export async function expandSpawns(
   state: TimelineState,
   seg: CompiledSegment,
   spanStart: Ms,
   depth: number,
-): void {
+): Promise<void> {
   if (depth > 3) return;
   for (const s of seg.spawns) {
+    // 链上场景的 setup 先解析（可能异步）；之后 buildChain 的编译才是同步的
+    await ensureSetupChain(state, s.scene as SceneInternal<unknown>);
     const chain = buildChain(
       state,
       s.key,
@@ -216,7 +267,7 @@ export function expandSpawns(
     );
     if (!chain) continue;
     for (const sp of chain.spans)
-      expandSpawns(state, sp.seg, sp.start, depth + 1);
+      await expandSpawns(state, sp.seg, sp.start, depth + 1);
   }
 }
 
@@ -261,6 +312,8 @@ export function buildChain(
   const seen = new Set<string>();
   while (sc && !seen.has(sc.id)) {
     seen.add(sc.id);
+    // 运行期 spawn 走同步解析；构建期已预解析过这里是空操作
+    runSetupSync(state, sc);
     const seg = compileScene(state, sc, prev, chainFps);
     mergeSegmentGraph(state, seg);
     prev = seg.bodyResult;

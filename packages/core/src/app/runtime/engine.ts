@@ -50,6 +50,7 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     nowInput: EMPTY_INPUT,
     random: createProgramRandom(opts.seed),
     randomStreams: new Map(),
+    setupDone: new WeakSet(),
   };
 }
 
@@ -179,7 +180,7 @@ export class TimelineEngine {
     sink: FrameSink,
     onProgress?: (done: number, total: number) => void,
   ): Promise<RunSummary> {
-    this.buildTimeline(head);
+    await this.buildTimeline(head);
     // 预览端：时间线建好即锚定起点并预排登记期声音；运行期发射由 ctx.audio 即时发声
     await this.state.opts.audioOut?.begin({
       durationMs: this.state.timelineEnd,
@@ -258,7 +259,7 @@ export class TimelineEngine {
 
   /** computeRange：采样网格 ∩ [from,to) 逐点采样完整状态表（同一次登记复用；动态链同样重采样） */
   async collect(head: SceneEntry, from: Ms, to: Ms): Promise<FrameState[]> {
-    this.buildTimeline(head);
+    await this.buildTimeline(head);
     let grid = buildSampleGrid(this.state).filter(
       (t) => t >= from && t < to && t < this.state.timelineEnd,
     );
@@ -284,7 +285,7 @@ export class TimelineEngine {
 
   /** computeAt：≤t 的最近采样点的完整状态表；越时间线尾 → undefined */
   async stateAt(head: SceneEntry, t: Ms): Promise<FrameState | undefined> {
-    this.buildTimeline(head);
+    await this.buildTimeline(head);
     if (t >= this.state.timelineEnd) return undefined;
     const grid = buildSampleGrid(this.state);
     // ≤t 的最近网格点（二分）
@@ -303,8 +304,8 @@ export class TimelineEngine {
     return this.aggregator.full();
   }
 
-  private buildTimeline(head: SceneEntry): void {
-    buildTimeline(this.deps().state, head);
+  private async buildTimeline(head: SceneEntry): Promise<void> {
+    await buildTimeline(this.deps().state, head);
   }
 
   private evaluateFrame(f: FrameIndex, t: Ms): void {
