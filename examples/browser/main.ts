@@ -316,6 +316,11 @@ async function exportMp4(): Promise<void> {
   exportBtn.textContent = "导出中…";
   hud.textContent = "编码中…";
   try {
+    // 导出用一块独立的画布：预览画布上留着上一次播放的最后一帧与 2D 状态，
+    // 复用会让「先预览再导出」与「直接导出」得到不同像素（同一剧本必须同一录像）。
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = stage.width;
+    exportCanvas.height = stage.height;
     const exporter = new WebCodecsExporter({
       width: stage.width,
       height: stage.height,
@@ -330,7 +335,7 @@ async function exportMp4(): Promise<void> {
       fps: 30,
       width: stage.width,
       height: stage.height,
-      canvas: stage,
+      canvas: exportCanvas,
       exporter,
       audio,
       headless: false,
