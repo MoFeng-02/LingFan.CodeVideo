@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
-    "lint": "pnpm typecheck && pnpm format:check",
+    "lint": "pnpm typecheck && pnpm format:check && pnpm lint:rules",
+    "lint:rules": "eslint .",
     "test:unit": "vitest run",
     "build": "pnpm -r build",
     "format": "prettier --write \"packages/**/src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\"",
@@ -20,9 +21,11 @@
     "@lingfan-video/core": "workspace:*",
     "@lingfan-video/infra": "workspace:*",
     "@types/node": "^22.7.0",
+    "eslint": "^9.39.4",
     "prettier": "^3.3.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.2",
+    "typescript-eslint": "^8.71.2",
     "vite": "^5.4.21",
     "vitest": "^2.1.1"
   }
