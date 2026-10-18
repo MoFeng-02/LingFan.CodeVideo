@@ -58,8 +58,7 @@ export function evaluateVoice(
   /** 增益折点（全局毫秒） */
   const gainPoints = buildGainPoints(voice, startMs, endLocal, naturalMs);
   /** 全局毫秒处的线性增益（折点之间线性插值，端点外取端点值） */
-  const gainAt = (globalMs: Ms): number =>
-    sampleLinear(gainPoints, globalMs, endMsOf(startMs, endLocal));
+  const gainAt = (globalMs: Ms): number => sampleLinear(gainPoints, globalMs);
 
   return {
     startMs,
@@ -96,15 +95,4 @@ export function evaluateVoice(
  */
 export function isAudible(v: VoiceTimeline, nowMs: Ms): boolean {
   return nowMs >= v.startMs && nowMs < v.endMs;
-}
-
-/**
- * 终界：全局毫秒。
- *
- * @param startMs 声音全局起点（毫秒）
- * @param endLocal 局部终点（毫秒）
- * @returns 声音全局终点（毫秒）
- */
-function endMsOf(startMs: Ms, endLocal: Ms): Ms {
-  return startMs + endLocal;
 }

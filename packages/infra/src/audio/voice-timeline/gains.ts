@@ -136,7 +136,7 @@ function envelopeAt(envelope: Envelope, local: Ms, endLocal: Ms): number {
   const resolved = envelope.points
     .map((p) => ({ atMs: resolveEnvelopeAt(p, endLocal), gain: p.value }))
     .sort((a, b) => a.atMs - b.atMs);
-  return sampleLinear(resolved, local, Number.POSITIVE_INFINITY);
+  return sampleLinear(resolved, local);
 }
 
 /**
@@ -180,7 +180,7 @@ function dedupe(points: GainPoint[]): GainPoint[] {
  * @returns 该时刻的线性插值增益
  */
 function sampleRaw(points: readonly GainPoint[], atMs: Ms): number {
-  return sampleLinear(points, atMs, Number.POSITIVE_INFINITY);
+  return sampleLinear(points, atMs);
 }
 
 /**
@@ -188,14 +188,9 @@ function sampleRaw(points: readonly GainPoint[], atMs: Ms): number {
  *
  * @param points 折线折点（按时间递增）
  * @param atMs 查询时刻（毫秒）
- * @param _endMs 保留参数（当前实现不消费）
  * @returns 该时刻的线性插值增益（空折线为 0）
  */
-function sampleLinear(
-  points: readonly GainPoint[],
-  atMs: Ms,
-  _endMs: Ms,
-): number {
+function sampleLinear(points: readonly GainPoint[], atMs: Ms): number {
   if (points.length === 0) return 0;
   const first = points[0]!;
   if (atMs <= first.atMs) return first.gain;
