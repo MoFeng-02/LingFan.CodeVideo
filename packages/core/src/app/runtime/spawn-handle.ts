@@ -12,7 +12,7 @@ import type {
   SpawnChain,
   TimelineState,
 } from "./engine-types";
-import { buildChain } from "./timeline-build";
+import { spawnChain } from "./runtime-spawn";
 
 /** 运行期 spawn（StepContext/LoopContext.spawn）：同 key 活跃 → 续接返回既有句柄 */
 export function dynamicSpawn(
@@ -23,10 +23,16 @@ export function dynamicSpawn(
   _parent: SpawnChain | null,
 ): Handle {
   const explicit = options.forever ? Infinity : options.duration;
-  const chain =
-    buildChain(deps.state, options.key, scene, t, explicit ?? 0, options.fps) ??
-    deps.state.spawnChains.find((c) => c.key === options.key && !c.killed)!;
-  // 链长语义：显式 duration 覆盖；缺省 = 链内容之和（buildChain 按 transition 短路实况回填）
+  // duration 原样传：undefined = 链长按内容实况回填（异步 setup 的链在帧边界物化）
+  const chain = spawnChain(
+    deps.state,
+    options.key,
+    scene,
+    t,
+    explicit,
+    options.fps,
+  );
+  // 链长语义：显式 duration 覆盖；缺省 = 链内容之和（物化完成后回填）
   if (explicit === Infinity)
     chain.end = Infinity; // 运行期 forever：总尾在 run 收尾后仍未知，续接链由 kill 控制
   else if (explicit !== undefined) chain.end = t + explicit;

@@ -113,26 +113,35 @@ describe("资产契约：一处声明、载荷原样往返", () => {
     expect(setupCalls).toBe(1);
   });
 
-  it("运行期 spawn 的场景不能异步 setup：明确报错而不是静默丢资产", async () => {
+  it("运行期 spawn 的异步 setup 在帧边界物化：不丢资产也不阻塞帧内", async () => {
+    const log: string[] = [];
     const late = start({
       window: 100,
-      setup: async () => {},
+      setup: async () => {
+        log.push("late-setup");
+      },
       run: (env) => {
-        env.step(100, () => {});
+        env.step(100, (ctx) => {
+          log.push(`late-t${Math.round(ctx.t)}`);
+        });
       },
     });
     const host = start({
-      window: 300,
+      window: 500,
       run: (env) => {
-        env.step(100, (ctx) => {
-          ctx.spawn(late, { key: "late" });
+        env.step(500, (ctx) => {
+          log.push(`host-t${Math.round(ctx.t)}`);
+          if (Math.round(ctx.t) === 100) ctx.spawn(late, { key: "late" });
         });
       },
     });
 
-    await expect(render(host, options())).rejects.toThrow(
-      /运行期 spawn 不能等待资产加载/,
-    );
+    await render(host, options());
+
+    // setup 在帧边界等完，链从下一个采样点整点开始（内容本地时间 0 对齐）
+    expect(log).toContain("late-setup");
+    expect(log).toContain("late-t200");
+    expect(log.filter((line) => line === "late-setup")).toHaveLength(1);
   });
 
   it("运行期 spawn 的场景允同步 setup（帧内不等待，但可以准备确定性状态）", async () => {

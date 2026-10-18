@@ -1,7 +1,5 @@
 import type { AutomationPoint, BusId, Ms } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
-import { compileSegment } from "../../domain/simulation";
-import { Recorder } from "../../domain/simulation/dsl";
 import type {
   CompiledSegment,
   SceneEntry,
@@ -10,7 +8,9 @@ import type {
 import { mergeSegmentGraph } from "./audio-graph";
 import { installAutomation } from "./bus-automation";
 import { pushVoice } from "./audio-runtime";
+import { compileScene, isThenable, makeSetupEnv } from "./compile-scene";
 import { makeRenderError } from "./error";
+import { walkChain } from "./runtime-spawn";
 import { overlapOffset } from "./timeline-spans";
 import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
 
@@ -33,6 +33,8 @@ export function resetTimeline(state: TimelineState): void {
   state.busKill.clear();
   state.busAutomation.clear();
   state.selfPaced.clear();
+  state.pendingSpawns.length = 0;
+  state.timelineEpoch = 0;
   state.timelineEnd = 0;
   state.nowMs = 0;
   state.inCallback = false;
@@ -156,54 +158,6 @@ function materializeAutomation(state: TimelineState): void {
     installAutomation(state, bus, points);
   }
 }
-/** 编译单段：body 捕获节点流（每次出现都跑——prev 依出现上下文，不能按 id 缓存） */
-export function compileScene(
-  state: TimelineState,
-  scene: SceneInternal<unknown>,
-  prev: unknown,
-  inheritedFps?: number,
-): CompiledSegment {
-  const { width, height, fps, headless, canvas } = state.opts;
-  const rec = new Recorder(width, height, fps, headless, canvas);
-  const result = scene.body(prev as never, rec);
-  return compileSegment(
-    scene.id,
-    scene.duration,
-    rec.nodes,
-    result,
-    fps,
-    inheritedFps,
-  );
-}
-
-/** setup 专用环境：assets 走组合根注入的 AssetSource（core 不认平台 API） */
-function makeSetupEnv(
-  state: TimelineState,
-  scene: SceneInternal<unknown>,
-): import("@lingfan-video/contracts").SetupEnv {
-  const { width, height, fps, headless, canvas, assets } = state.opts;
-  const rec = new Recorder(width, height, fps, headless, canvas);
-  const hooks = {
-    load: (url: string) => {
-      if (!assets)
-        throw makeRenderError(
-          "spec_violation",
-          scene.id,
-          0,
-          "assets.load：引擎未装配 AssetSource（组合根缺省应注入 fail-fast 实现）",
-        );
-      return assets.load(url);
-    },
-  };
-  void scene;
-  return Object.assign(rec, { assets: hooks });
-}
-
-/** thenable 判定（不用 instanceof：跨 realm 的 Promise 也要认） */
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return typeof (value as { then?: unknown } | null)?.then === "function";
-}
-
 /**
  * 构建期解析 setup：推演开始前完成资产加载等 I/O，之后逐帧求值全同步。
  * 同一场景在本次推演里只跑一次 setup（资产只解码一次）。
@@ -232,26 +186,6 @@ export async function ensureSetupChain(
   }
 }
 
-/**
- * 同步解析 setup：运行期 spawn 走这条（帧内不得等待 I/O）。
- * 异步 setup 的场景只能在构建期 spawn，否则明确报错——不静默丢资产。
- */
-export function runSetupSync(
-  state: TimelineState,
-  scene: SceneInternal<unknown>,
-): void {
-  if (!scene.setup || state.setupDone.has(scene)) return;
-  state.setupDone.add(scene);
-  const result = scene.setup(makeSetupEnv(state, scene));
-  if (isThenable(result))
-    throw makeRenderError(
-      "spec_violation",
-      scene.id,
-      state.nowMs,
-      "场景 setup 返回 Promise：运行期 spawn 不能等待资产加载；请在登记期 spawn 该场景，或把 setup 写成同步",
-    );
-}
-
 /** 展开 spawn 链（编译期锚定的）；depth 帽 3（嵌套 spawn）。链登记由 buildChain 内完成，此处不再返回 */
 export async function expandSpawns(
   state: TimelineState,
@@ -275,15 +209,6 @@ export async function expandSpawns(
     for (const sp of chain.spans)
       await expandSpawns(state, sp.seg, sp.start, depth + 1);
   }
-}
-
-/** 段的内容末点：单元窗口上界（无单元时才按声明池长）——声明池是上限不是内容 */
-function contentEndOf(seg: CompiledSegment): Ms {
-  const declared = seg.activeEnd ?? seg.duration;
-  if (seg.units.length === 0) return declared;
-  let end = 0;
-  for (const u of seg.units) if (u.windowEnd > end) end = u.windowEnd;
-  return Math.min(declared, end);
 }
 
 /** 构造一条链并登记（同 key 活跃链已存在 → 返回 undefined，续接语义）；forever 端点先记 Infinity */
@@ -311,28 +236,28 @@ export function buildChain(
     start,
     end: duration === Infinity ? Infinity : start + duration,
     killed: false,
+    materialized: false,
+    fixedEnd: true,
   };
-  let cs = start;
-  let pendingOverlap: Ms = 0;
-  let sc: SceneInternal<unknown> | undefined = head;
-  let prev: unknown; // spawn 链独立于主链传参，起点 prev=undefined
-  const seen = new Set<string>();
-  while (sc && !seen.has(sc.id)) {
-    seen.add(sc.id);
-    // 运行期 spawn 走同步解析；构建期已预解析过这里是空操作
-    runSetupSync(state, sc);
-    const seg = compileScene(state, sc, prev, chainFps);
-    mergeSegmentGraph(state, seg);
-    prev = seg.bodyResult;
-    // 链长 = 实际内容：声明池比单元窗口长时按窗口算（空池不算链长）
-    const len = contentEndOf(seg);
-    cs -= overlapOffset(pendingOverlap, len, sc.id, cs);
-    chain.spans.push({ scene: sc, seg, start: cs, end: cs + len });
-    cs += len;
-    pendingOverlap = seg.transitionOverlap ?? 0;
-    sc = (seg.transitionNext as SceneInternal<unknown> | undefined) ?? sc.next;
-  }
-  if (duration !== Infinity) chain.end = cs; // 修正估算链长（transition 短路虚高）
   state.spawnChains.push(chain);
+  const outcome = walkChain(state, chain, head, chainFps, {
+    cs: start,
+    prev: undefined,
+    seen: new Set(),
+    pendingOverlap: 0,
+  });
+  // 构建期不允许异步 setup：要么已在 ensureSetupChain 里解析完，要么明确报错（帧内不得等待）
+  if (outcome.wait) {
+    state.spawnChains.pop();
+    throw makeRenderError(
+      "spec_violation",
+      outcome.wait.head.id,
+      state.nowMs,
+      "场景 setup 返回 Promise：运行期 spawn 不能等待资产加载；请在登记期 spawn 该场景，或把 setup 写成同步",
+    );
+  }
+  chain.materialized = true;
+  if (duration !== Infinity) chain.end = outcome.cursor.cs; // 修正估算链长（transition 短路虚高）
+  state.timelineEpoch++;
   return chain;
 }

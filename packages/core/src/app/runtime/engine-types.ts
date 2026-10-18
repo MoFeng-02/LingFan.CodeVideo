@@ -38,6 +38,10 @@ export interface SpawnChain {
   start: Ms;
   end: Ms;
   killed: boolean;
+  /** 链内容是否已编译完成（异步 setup 的运行期 spawn 会在帧边界补完，见 PendingSpawn） */
+  materialized: boolean;
+  /** end 是否由 spawn 参数定死（forever / 显式 duration）；缺省链长按内容实况回填 */
+  fixedEnd: boolean;
   /** 消亡窗口起点（kill/dispose 带 fadeOut 时写入；窗口内继续求值） */
   dyingFrom?: Ms;
   /** 消亡窗口终点（含）；t >= 此值 → 真正出池 */
@@ -100,6 +104,22 @@ export interface BusRampState {
 }
 
 /** 引擎可变状态：跨原子单元共享（自由函数显式传参，不散全局） */
+export interface PendingSpawn {
+  chain: SpawnChain;
+  /** 待继续编译的场景：它的 setup 返回了 Promise */
+  head: SceneInternal<unknown>;
+  promise: PromiseLike<unknown>;
+  chainFps?: number;
+  /** 已编译前缀的内容末点（全局毫秒）：恢复时从链起点平移后的位置接着走 */
+  cursor: Ms;
+  /** 链上 body 的 prev 传参（恢复时接着用） */
+  prev: unknown;
+  /** 已见过的场景 id（成环检测跨恢复保留） */
+  seen: Set<string>;
+  /** 上一段声明的重叠窗（恢复时接着用） */
+  pendingOverlap: Ms;
+}
+
 export interface TimelineState {
   opts: EngineOptions;
   deadUnits: Set<string>; // `${sceneId}/${unitKey}`：硬死（立即不求值）
@@ -131,6 +151,10 @@ export interface TimelineState {
   /** 未给 ms 的 loop：迭代号与迭代起点（按单元键登记） */
   selfPaced: Map<string, { iteration: number; iterStart: Ms }>;
   spans: ChainSpan[];
+  /** 运行期 spawn 待物化的链（异步 setup 未完成的）：帧边界补完，帧内不等待 I/O */
+  pendingSpawns: PendingSpawn[];
+  /** 时间线结构版本号：链/段变化即自增，引擎据此重采样网格 */
+  timelineEpoch: number;
   timelineEnd: Ms;
   /** 输入轨道（声明式事件表；逐帧求值出快照） */
   input: InputTrack;

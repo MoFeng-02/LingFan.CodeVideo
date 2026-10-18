@@ -9,19 +9,16 @@ import type {
   Painter,
 } from "@lingfan-video/contracts";
 import { StateAggregator } from "../../domain/simulation";
-import type { CompiledUnit, SceneEntry } from "../../domain/simulation/types";
+import type { SceneEntry } from "../../domain/simulation/types";
 import { buildAudioGraph, flushBusUpdates } from "./audio-graph";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { EMPTY_INPUT, createInputTrack } from "./input";
 import { createProgramRandom } from "./random";
+import { flushPendingSpawns } from "./runtime-spawn";
+import { buildSampleGrid, firstAfter } from "./sample-grid";
 import { buildTimeline } from "./timeline-build";
-import type {
-  ChainSpan,
-  EvalDeps,
-  RunSummary,
-  TimelineState,
-} from "./engine-types";
+import type { EvalDeps, RunSummary, TimelineState } from "./engine-types";
 
 /** 引擎可变状态装配（TimelineEngine 独占持有，原子单元经 EvalDeps 显式共享） */
 function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
@@ -43,6 +40,8 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     busAutomation: new Map(),
     selfPaced: new Map(),
     spans: [],
+    pendingSpawns: [],
+    timelineEpoch: 0,
     timelineEnd: 0,
     nowMs: 0,
     inCallback: false,
@@ -52,81 +51,6 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     randomStreams: new Map(),
     setupDone: new WeakSet(),
   };
-}
-
-/**
- * 采样网格：各活跃单元在自己 fps 网格上的采样点并集。
- * - 单元 fps 网格：第 n 点 = windowStart + n×(1000/fps)，取整微秒去重
- * - hold 单元窗外冻结不加点（末点由窗口内网格覆盖）
- * - 空窗（无任何单元）不产帧——语义层单位是毫秒，fps 只是采样密度
- */
-export function buildSampleGrid(state: TimelineState): Ms[] {
-  const seen = new Set<number>(); // 微秒整数
-  const points: number[] = [];
-  const addUnit = (u: CompiledUnit, spanStart: Ms, spanEnd: Ms): void => {
-    const s = spanStart + u.windowStart;
-    const e = Math.min(spanStart + u.windowEnd, spanEnd);
-    for (let i = 0; ; i++) {
-      const tUs = Math.round((s + (i * 1000) / u.fps) * 1000);
-      if (tUs >= Math.round(e * 1000) || tUs < Math.round(s * 1000)) break;
-      if (!seen.has(tUs)) {
-        seen.add(tUs);
-        points.push(tUs);
-      }
-    }
-  };
-
-  const walkSpans = (spans: EvalDeps["state"]["spans"]): void => {
-    for (const span of spans) {
-      for (const u of span.seg.units) {
-        // wait 回调单元不贡献采样点（自身不产帧）
-        if (u.onUpdate) continue;
-        if (u.loop && u.loop.iterationMs === undefined) {
-          // 未给 ms：自管节奏——采样点沿基础帧率推进（自管单元没有固定网格）
-          const s = span.start + u.windowStart;
-          const e = Math.min(span.start + u.windowEnd, span.end);
-          for (let tUs = Math.round(s * 1000); tUs < Math.round(e * 1000);) {
-            if (!seen.has(tUs)) {
-              seen.add(tUs);
-              points.push(tUs);
-            }
-            tUs += Math.round(1_000_000 / state.opts.fps);
-          }
-        } else {
-          addUnit(u, span.start, span.end);
-        }
-      }
-    }
-  };
-
-  for (const c of state.spawnChains) {
-    if (!c.killed) walkSpans(c.spans);
-    // forever 链循环重放：内容播完后的尾段沿链网格（第一圈相位）补采样点
-    if (!c.killed && c.end !== Infinity) {
-      const contentLen = c.spans[c.spans.length - 1]!.end - c.start;
-      if (contentLen > 0 && c.end - c.start > contentLen) {
-        const loops = Math.ceil((c.end - c.start) / contentLen);
-        const original = c.spans;
-        for (let k = 1; k < loops; k++)
-          for (const span of original) {
-            const shifted: ChainSpan = {
-              scene: span.scene,
-              seg: span.seg,
-              start: span.start + k * contentLen,
-              end: span.end + k * contentLen,
-            };
-            for (const u of span.seg.units) {
-              if (u.onUpdate) continue; // wait 回调单元不贡献采样点
-              if (u.loop && u.loop.iterationMs === undefined) continue; // 未给 ms：循环圈内沿基础网格
-              addUnit(u, shifted.start, shifted.end);
-            }
-          }
-      }
-    }
-  }
-  walkSpans(state.spans);
-  points.sort((a, b) => a - b);
-  return points.map((us) => us / 1000);
 }
 
 /**
@@ -224,7 +148,7 @@ export class TimelineEngine {
   ): Promise<RunSummary> {
     let grid = buildSampleGrid(this.state);
     let idx = 0;
-    let chainCount = this.state.spawnChains.length;
+    let epoch = this.state.timelineEpoch;
     let written = 0;
     while (idx < grid.length) {
       const t = grid[idx]!; // 网格点已是毫秒
@@ -239,9 +163,12 @@ export class TimelineEngine {
       written++;
       onProgress?.(written, grid.length);
       idx++;
-      // 运行期 spawn（ctx.spawn/scheduler）在求值中追加链 → 重采样（严格晚于当前点）
-      if (this.state.spawnChains.length !== chainCount) {
-        chainCount = this.state.spawnChains.length;
+      // 运行期 spawn 的异步 setup：这一帧已交出，帧边界补完链（不阻塞帧内）
+      if (this.state.pendingSpawns.length > 0)
+        await flushPendingSpawns(this.state, (at) => firstAfter(grid, at));
+      // 运行期 spawn（ctx.spawn/scheduler）追加或物化链 → 重采样（严格晚于当前点）
+      if (this.state.timelineEpoch !== epoch) {
+        epoch = this.state.timelineEpoch;
         grid = buildSampleGrid(this.state);
         idx = grid.findIndex((u) => u > t);
         if (idx < 0) break;
@@ -264,15 +191,17 @@ export class TimelineEngine {
       (t) => t >= from && t < to && t < this.state.timelineEnd,
     );
     let idx = 0;
-    let chainCount = this.state.spawnChains.length;
+    let epoch = this.state.timelineEpoch;
     const out: FrameState[] = [];
     while (idx < grid.length) {
       const t = grid[idx]!; // 网格点已是毫秒
       this.evaluateFrame(out.length, t);
       out.push(this.aggregator.full());
       idx++;
-      if (this.state.spawnChains.length !== chainCount) {
-        chainCount = this.state.spawnChains.length;
+      if (this.state.pendingSpawns.length > 0)
+        await flushPendingSpawns(this.state, (at) => firstAfter(grid, at));
+      if (this.state.timelineEpoch !== epoch) {
+        epoch = this.state.timelineEpoch;
         grid = buildSampleGrid(this.state).filter(
           (x) => x >= from && x < to && x < this.state.timelineEnd,
         );
