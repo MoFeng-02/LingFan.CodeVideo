@@ -1,4 +1,6 @@
 import type {
+  AssetLike,
+  AssetManifestEntry,
   AssetSource,
   AudioGraph,
   AudioOutput,
@@ -99,6 +101,13 @@ export interface BusRampState {
   pan?: ParamRamp;
 }
 
+/** 资产清单索引：构建期建一次（首次取资产时），本推演内不变 */
+export interface AssetIndex {
+  readonly entries: readonly AssetManifestEntry[];
+  readonly byId: Map<string, AssetManifestEntry>;
+  readonly byUrl: Map<string, AssetManifestEntry>;
+}
+
 /** 引擎可变状态：跨原子单元共享（自由函数显式传参，不散全局） */
 export interface TimelineState {
   opts: EngineOptions;
@@ -142,6 +151,12 @@ export interface TimelineState {
   randomStreams: Map<string, RandomStream>;
   /** 已完成 setup 的场景（每次推演复位；同一场景只跑一次 setup，资产只解码一次） */
   setupDone: WeakSet<object>;
+  /** 资产清单索引（首次取资产时解析；本推演内不变） */
+  assetIndex: AssetIndex | null;
+  /** 清单是否已解析（null 与「没清单」要区分：前者是还没读，后者是适配器没提供） */
+  assetIndexRead: boolean;
+  /** 本推演内的资产缓存：清单 id / url → 已加载的载荷（同一资产只解码一次） */
+  assetCache: Map<string, Promise<AssetLike>>;
   /** 当前求值时间（句柄操作／alive 判定的时间轴依据） */
   nowMs: Ms;
   /** 是否处于回调执行中（句柄操作的合法窗口） */

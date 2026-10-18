@@ -51,6 +51,9 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     random: createProgramRandom(opts.seed),
     randomStreams: new Map(),
     setupDone: new WeakSet(),
+    assetIndex: null,
+    assetIndexRead: false,
+    assetCache: new Map(),
   };
 }
 

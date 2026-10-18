@@ -8,6 +8,7 @@ import type {
   SceneInternal,
 } from "../../domain/simulation/types";
 import { mergeSegmentGraph } from "./audio-graph";
+import { makeAssetLoader } from "./assets";
 import { installAutomation } from "./bus-automation";
 import { pushVoice } from "./audio-runtime";
 import { makeRenderError } from "./error";
@@ -37,6 +38,10 @@ export function resetTimeline(state: TimelineState): void {
   state.inCallback = false;
   // setup 每次推演重跑一次（资产按本次推演的解码器重新加载，跨推演不共享句柄）
   state.setupDone = new WeakSet();
+  // 资产清单与缓存同样按推演隔离：跨推演的载荷句柄不可复用
+  state.assetIndex = null;
+  state.assetIndexRead = false;
+  state.assetCache.clear();
 }
 
 /** 主链时间线构建：成环检测、prev 链式传参、transition 优先、spawn 链展开 */
@@ -175,20 +180,9 @@ function makeSetupEnv(
   state: TimelineState,
   scene: SceneInternal<unknown>,
 ): import("@lingfan-video/contracts").SetupEnv {
-  const { width, height, fps, headless, canvas, assets } = state.opts;
+  const { width, height, fps, headless, canvas } = state.opts;
   const rec = new Recorder(width, height, fps, headless, canvas);
-  const hooks = {
-    load: (url: string) => {
-      if (!assets)
-        throw makeRenderError(
-          "spec_violation",
-          scene.id,
-          0,
-          "assets.load：引擎未装配 AssetSource（组合根缺省应注入 fail-fast 实现）",
-        );
-      return assets.load(url);
-    },
-  };
+  const hooks = { load: makeAssetLoader(state, scene.id) };
   void scene;
   return Object.assign(rec, { assets: hooks });
 }
