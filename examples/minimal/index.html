@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>最小示例 · 三章无缝过场</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-content: center;
+        gap: 12px;
+        background: #05070c;
+        color: #f2f6ff;
+        font:
+          14px/1.5 "Segoe UI",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      canvas {
+        display: block;
+        width: 960px;
+        height: 540px;
+        background: #05070c;
+      }
+      #hud {
+        text-align: center;
+        color: #93a4c4;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage" width="960" height="540"></canvas>
+    <div id="hud">准备</div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
