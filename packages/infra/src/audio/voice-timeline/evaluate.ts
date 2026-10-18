@@ -14,8 +14,9 @@ import type { VoiceTimeline } from "./types";
  *  - 运行期 setRate 在调用时刻切分，先线性爬坡再常量（覆盖其后）；
  *  - loop 时源位置取 M(local) 对源时长的余数（源空间回卷）。
  *
- * 终界规则：总时间线尾是唯一硬界，再取 stop、loop 的 untilMs（同局部毫秒基准）、
- * 非循环时再取源播完时刻的最小值。求值只发生一次，结果供出片与预览共用。
+ * 终界规则：总时间线尾是唯一硬界，再取 stop、loop 的 untilMs（契约给定的是时间线毫秒，
+ * 这里换算成相对声音起点的局部毫秒）、非循环时再取源播完时刻的最小值。
+ * 求值只发生一次，结果供出片与预览共用。
  *
  * @param voice 声音实例（全局起点、素材/合成、增益包络、声像、循环、变速、运行期操作）
  * @param sourceDurationMs 源时长（毫秒；0 表示无源可播，非循环声音该帧即结束）
@@ -42,8 +43,9 @@ export function evaluateVoice(
   /** 停声时刻（局部毫秒；无停声操作时为 Infinity） */
   const stopMs = stopOp ? Math.max(0, stopOp.atMs - startMs) : Infinity;
   const untilMs = voice.loop?.untilMs;
-  /** 循环终点（局部毫秒；未声明时不受此界） */
-  const untilLocal = untilMs === undefined ? Infinity : Math.max(0, untilMs);
+  /** 循环终点（局部毫秒；`untilMs` 是时间线毫秒，减起点换算；未声明时不受此界） */
+  const untilLocal =
+    untilMs === undefined ? Infinity : Math.max(0, untilMs - startMs);
 
   // 终界规则：总时间线尾是唯一硬界；再看 stop / until / 源播完
   /** 总时间线尾对应的局部毫秒（声音起点不会越过它） */
