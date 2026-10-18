@@ -5,6 +5,7 @@ import type {
   BusSpec,
   DuckRule,
   FrameState,
+  LayerDeclaration,
   LoopContext,
   Ms,
   Scene,
@@ -68,7 +69,8 @@ export type SimNode =
   | { kind: "automate"; spec: BusAutomationSpec }
   | { kind: "bus"; spec: BusSpec }
   | { kind: "send"; spec: SendSpec }
-  | { kind: "duck"; rule: DuckRule };
+  | { kind: "duck"; rule: DuckRule }
+  | { kind: "layer"; declaration: LayerDeclaration; anchor: Ms };
 
 /** 剧本片段运行时形态（Scene 的内部实现：next 由 cutTo/transitionTo 写入） */
 export interface SceneInternal<P = unknown> {
@@ -147,6 +149,15 @@ export interface CompiledAudio {
   readonly synth?: SynthSpec;
 }
 
+/** 编译产物的层声明（段内相对锚点；全局化由 runtime 承担） */
+export interface CompiledLayer {
+  readonly declaration: LayerDeclaration;
+  /** 段内偏移起点：登记位置 + declaration.from */
+  readonly fromMs: Ms;
+  /** 段内偏移终点：给了 to 则登记位置 + to；undefined = 本段收窗 */
+  readonly toMs?: Ms;
+}
+
 /** 单段编译结果（衔接下一片段由 runtime 链式推进） */
 export interface CompiledSegment {
   sceneId: string;
@@ -154,6 +165,8 @@ export interface CompiledSegment {
   units: CompiledUnit[];
   spawns: CompiledSpawn[];
   audio: CompiledAudio[];
+  /** 登记期画面层声明（段内相对时刻；runtime 全局化后交给帧宿主） */
+  layers: CompiledLayer[];
   /** 登记期音频图拓扑（段内声明；runtime 汇总成全时间线图） */
   buses: BusSpec[];
   sends: SendSpec[];

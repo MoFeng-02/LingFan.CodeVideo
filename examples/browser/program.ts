@@ -157,7 +157,17 @@ function schedulePicture(env: SceneEnv): void {
 export const picture = createScene(TOTAL, (_prev, env) => {
   buildBuses(env);
   env.audio(clip(SONG_URL), { at: 0, gain: gain(0.9), bus: "song" });
-  env.par([(b) => scheduleSfx(b), (b) => schedulePicture(b)]);
+  env.par([
+    // 声音一支：只登记音频，不碰画面
+    (b) => scheduleSfx(b),
+    // 画面一支：先声明自己那两层，再让每个小节去登记本段的绘制
+    (b) => {
+      // 层声明在这里，渲染面在宿主（main.ts）——剧本只说次序与区间。
+      b.layer({ id: "stage3d", z: 0 });
+      b.layer({ id: "type", z: 10 });
+      schedulePicture(b);
+    },
+  ]);
 });
 
 /** 预览与导出共用同一个入口 */

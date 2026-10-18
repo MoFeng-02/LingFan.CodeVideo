@@ -4,6 +4,7 @@ import type {
   BusAutomationSpec,
   BusSpec,
   DuckRule,
+  LayerDeclaration,
   LoopSpec,
   Ms,
   Scene,
@@ -173,6 +174,30 @@ export class Recorder implements SceneEnv {
       kind: "audio",
       clip,
       options: options ?? {},
+      anchor: this.cursor,
+    });
+  }
+
+  layer(declaration: LayerDeclaration): void {
+    // 层声明：不推进 cursor（与 audio/synth 同为声明）。叠放次序由 z 决定，
+    // 所以并行分支各自登记也不会打架；同 id 重复登记 = 后者覆盖（编译期收口）。
+    if (declaration.id.trim() === "")
+      throw violation("layer 的 id 不能为空串：它是剧本与宿主之间唯一的配对键");
+    if (declaration.from !== undefined && !Number.isFinite(declaration.from))
+      throw violation(`layer "${declaration.id}" 的 from 必须是有限毫秒数`);
+    if (declaration.to !== undefined && !Number.isFinite(declaration.to))
+      throw violation(`layer "${declaration.id}" 的 to 必须是有限毫秒数`);
+    if (
+      declaration.from !== undefined &&
+      declaration.to !== undefined &&
+      declaration.to <= declaration.from
+    )
+      throw violation(
+        `layer "${declaration.id}" 的可见区间为空（to ${declaration.to} <= from ${declaration.from}）`,
+      );
+    this.nodes.push({
+      kind: "layer",
+      declaration,
       anchor: this.cursor,
     });
   }

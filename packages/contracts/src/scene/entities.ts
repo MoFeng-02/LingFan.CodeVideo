@@ -17,6 +17,7 @@ import type {
   WaitFn,
   WaitOptions,
 } from "./nodes";
+import type { LayerEnv } from "./layers";
 
 /** 帧号换算糖：f(n) = n × (1000 / 单元有效帧率)——单元内语义，跨单元不可比 */
 export type FrameFn = (frameNumber: number) => Ms;
@@ -48,7 +49,7 @@ export interface TransitionOptions {
  * 设计决定：step/loop/par/wait/transitionTo 以 SceneEnv 成员形式提供——
  * 显式上下文、避免隐式注册作用域。
  */
-export interface SceneEnv extends CanvasEnv {
+export interface SceneEnv extends CanvasEnv, LayerEnv {
   fps: number;
   headless: boolean;
   /** 显式时长形式 */

@@ -33,6 +33,7 @@ export function resetTimeline(state: TimelineState): void {
   state.busKill.clear();
   state.busAutomation.clear();
   state.selfPaced.clear();
+  state.layers.clear();
   state.pendingSpawns.length = 0;
   state.timelineEpoch = 0;
   state.timelineEnd = 0;
@@ -84,6 +85,7 @@ export async function buildTimeline(
   state.timelineEnd = end;
   // forever spawn 寿命 = 总链尾：终界确定后再夹取
   for (const c of state.spawnChains) if (c.end === Infinity) c.end = end;
+  materializeLayers(state);
   materializeAudio(state);
   materializeAutomation(state);
 }
@@ -112,6 +114,28 @@ function forEachOccurrence(
     }
   }
   walkSpans(state.spans);
+}
+
+/**
+ * 画面层全局化：登记期声明（段内锚点）→ 绝对故事时间，交给帧宿主去配对渲染面。
+ *
+ * 同一 id 多次登记 = 最后一处声明为准（与 bus 的覆盖语义一致）：永久 spawn 与
+ * forever 重放都会让同一段出现多次，取最后一次即「最终生效区间」。
+ * 区间终点缺省取该次出现的段窗末尾。
+ */
+function materializeLayers(state: TimelineState): void {
+  forEachOccurrence(state, (seg, spanStart, spanEnd) => {
+    for (const l of seg.layers) {
+      const from = spanStart + l.fromMs;
+      const to = l.toMs === undefined ? spanEnd : spanStart + l.toMs;
+      if (to <= from) continue;
+      state.layers.set(l.declaration.id, {
+        ...l.declaration,
+        from,
+        to,
+      });
+    }
+  });
 }
 
 /**

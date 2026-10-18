@@ -11,6 +11,7 @@ import { violation } from "../spec-violation";
 import type { SceneInternal, SimNode } from "./types";
 import type {
   CompiledAudio,
+  CompiledLayer,
   CompiledSegment,
   CompiledSpawn,
   CompiledUnit,
@@ -43,6 +44,7 @@ export function compileSegment(
   const sends: SendSpec[] = [];
   const ducks: DuckRule[] = [];
   const automations: BusAutomationSpec[] = [];
+  const layers: CompiledLayer[] = [];
   let activeEnd: Ms | undefined;
   let transitionNext: unknown;
   let transitionOverlap: Ms | undefined;
@@ -206,6 +208,17 @@ export function compileSegment(
           ducks.push(n.rule);
           break;
         }
+        case "layer": {
+          // 段内相对锚点：登记位置 + declaration.from；终点给了 to 才记（否则本段收窗）
+          layers.push({
+            declaration: n.declaration,
+            fromMs: n.anchor + (n.declaration.from ?? 0),
+            ...(n.declaration.to === undefined
+              ? {}
+              : { toMs: n.anchor + n.declaration.to }),
+          });
+          break;
+        }
       }
     }
     return local;
@@ -222,6 +235,7 @@ export function compileSegment(
     sends,
     ducks,
     automations,
+    layers,
     activeEnd,
     transitionNext,
     transitionOverlap,

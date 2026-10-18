@@ -125,7 +125,11 @@ function makeHost(canvas: HTMLCanvasElement, gpu: boolean) {
     base: canvas,
     width: WIDTH,
     height: HEIGHT,
-    layers: [createStage3d(WIDTH, HEIGHT), createLayer2d(WIDTH, HEIGHT)],
+    // 层声明在剧本里（env.layer），这里只提供每一层的渲染面——宿主不认识渲染器。
+    surfaces: {
+      stage3d: createStage3d(WIDTH, HEIGHT),
+      type: createLayer2d(WIDTH, HEIGHT),
+    },
     candidates: gpu
       ? [() => createThreeCompositor(), () => createCanvas2dCompositor()]
       : [() => createCanvas2dCompositor()],

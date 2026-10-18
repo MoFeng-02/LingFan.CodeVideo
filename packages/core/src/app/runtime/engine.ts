@@ -42,6 +42,7 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     busKill: new Map(),
     busAutomation: new Map(),
     selfPaced: new Map(),
+    layers: new Map(),
     spans: [],
     pendingSpawns: [],
     timelineEpoch: 0,
@@ -92,12 +93,15 @@ export class TimelineEngine {
 
   private hostInfo(): FrameHostInfo {
     const opts = this.state.opts;
+    const declared = [...this.state.layers.values()];
     return {
       fps: opts.fps,
       width: opts.width,
       height: opts.height,
       durationMs: this.state.timelineEnd,
       headless: opts.headless ?? false,
+      // 没有层声明时不给这个键：宿主的既有形态（旧实现只认 fps/尺寸/时长）不变
+      ...(declared.length > 0 ? { layers: declared } : {}),
     };
   }
 

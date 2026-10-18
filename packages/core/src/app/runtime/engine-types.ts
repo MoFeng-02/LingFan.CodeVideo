@@ -12,6 +12,7 @@ import type {
   InputEvent,
   InputSnapshot,
   InputTrack,
+  LayerDeclaration,
   Ms,
   RandomStream,
   SendSpec,
@@ -22,6 +23,12 @@ import type {
 } from "../../domain/simulation/types";
 import type { MutableVoice } from "./audio-runtime";
 import type { DeclaredAutomation } from "./bus-automation";
+
+/** 全局化后的层声明：绝对故事时间，缺省区间已填满 */
+export interface GlobalLayer extends LayerDeclaration {
+  readonly from: Ms;
+  readonly to: Ms;
+}
 
 /** 链上一段时间线占位（transition 提前收窗：end 取 activeEnd） */
 export interface ChainSpan {
@@ -156,6 +163,8 @@ export interface TimelineState {
   /** 时间线结构版本号：链/段变化即自增，引擎据此重采样网格 */
   timelineEpoch: number;
   timelineEnd: Ms;
+  /** 画面层声明（剧本登记；绝对故事时间，缺省区间已填满） */
+  layers: Map<string, GlobalLayer>;
   /** 输入轨道（声明式事件表；逐帧求值出快照） */
   input: InputTrack;
   /** 当前帧的输入快照（逐帧求值一次，同帧所有单元共享同一份） */

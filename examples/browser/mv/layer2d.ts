@@ -6,7 +6,7 @@
  * 或 GPU 四边形）都不用改这里。
  */
 import type { FrameIndex, Ms } from "@lingfan-video/contracts";
-import type { FrameLayer, LayerSurface } from "@lingfan-video/infra";
+import type { LayerSurface } from "@lingfan-video/infra";
 import { C, FONT, rgba } from "./palette";
 import { clamp01, smoothstep } from "./math";
 import { whalePath } from "./whale-mark";
@@ -340,8 +340,8 @@ function paint(g: CanvasRenderingContext2D, t: number, frame: number): void {
   void frame;
 }
 
-/** 造二维文字层（独立画布，交给合成器叠） */
-export function createLayer2d(width: number, height: number): FrameLayer {
+/** 造二维文字层（独立画布，交给合成器叠；id 由剧本声明决定） */
+export function createLayer2d(width: number, height: number): LayerSurface {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -366,5 +366,5 @@ export function createLayer2d(width: number, height: number): FrameLayer {
     },
   };
 
-  return { spec: { id: "type", z: 20, blend: "normal" }, surface };
+  return surface;
 }

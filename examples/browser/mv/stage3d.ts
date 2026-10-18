@@ -31,7 +31,7 @@ import {
   TorusGeometry,
 } from "three";
 import { createThreeLayer } from "@lingfan-video/infra/frames/adapters/three";
-import type { FrameLayer } from "@lingfan-video/infra";
+import type { LayerSurface } from "@lingfan-video/infra";
 import { hash32 } from "./math";
 import { ACTS, actFrom, actOf, BAR_MS } from "./timeline";
 
@@ -151,7 +151,7 @@ const VISIBILITY: Record<string, readonly (keyof Groups)[]> = {
   hand: ["whale", "stars"],
 };
 
-export function createStage3d(width: number, height: number): FrameLayer {
+export function createStage3d(width: number, height: number): LayerSurface {
   const groups: Groups = {
     wall: new Group(),
     burst: new Group(),
@@ -538,7 +538,7 @@ export function createStage3d(width: number, height: number): FrameLayer {
     },
   });
 
-  return layer;
+  return layer.surface;
 }
 
 // three 的 Vector3 只在这里用到一次，单独起名避免和本地工具函数混淆

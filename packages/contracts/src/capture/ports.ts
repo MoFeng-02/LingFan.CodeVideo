@@ -1,4 +1,5 @@
 import type { FrameIndex, Ms } from "../shared/units";
+import type { LayerDeclaration } from "../scene/layers";
 
 /** 帧载体（CPU 位图最小形态；数据在 CPU 侧可读写，纹理等载体由其上层自行适配） */
 export interface FrameBitmap {
@@ -75,6 +76,13 @@ export interface FrameHostInfo {
   readonly height: number;
   readonly durationMs: Ms;
   readonly headless: boolean;
+  /**
+   * 本片声明的画面层（剧本 `env.layer(...)` 的编译产物，绝对故事时间）。
+   *
+   * 宿主按 `id` 给自己的渲染面配声明：声明说「叠在谁上面、什么时候在」，
+   * 渲染面是宿主自己的事。层数由剧本决定，宿主不认识渲染器。
+   */
+  readonly layers?: readonly LayerDeclaration[];
 }
 
 /**
