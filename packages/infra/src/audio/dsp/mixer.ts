@@ -17,13 +17,7 @@ import type {
 import { MASTER_BUS } from "@lingfan-video/contracts";
 import { DuckUnit } from "./duck";
 import { createEffectUnits, type EffectUnit } from "./effects";
-import {
-  anySolo,
-  makeAutomation,
-  parentOf,
-  topoOrder,
-  type BusParams,
-} from "./graph";
+import { makeAutomation, parentOf, topoOrder, type BusParams } from "./graph";
 import { panGain } from "./math";
 import type { ProgramVoice, VoicePcm } from "./types";
 import { layVoice, planVoice, type VoicePlan } from "./voice";
@@ -58,6 +52,18 @@ export interface StreamingMixerOptions {
 export interface MixProgramInput extends StreamingMixerOptions {
   /** 参与混音的全部声音；顺序不影响结果（各声音独立叠加），后加入的逐样本相加 */
   readonly voices: readonly ProgramVoice[];
+}
+
+/** 本块逐帧的自动化参数：每条总线一次求值，主循环与独奏判定只读 */
+interface BlockParams {
+  /** 逐帧线性增益 */
+  readonly gain: Float32Array;
+  /** 逐帧声像（-1..1） */
+  readonly pan: Float32Array;
+  /** 逐帧静音（1 = 静音） */
+  readonly mute: Uint8Array;
+  /** 逐帧独奏（1 = 独奏） */
+  readonly solo: Uint8Array;
 }
 
 /** 一条总线的运行期状态：块缓冲与效果链实例（缓冲每块复用，不逐块分配） */
@@ -144,8 +150,6 @@ export class StreamingMixer {
   /** 目标总线 → 侧链压制列表 */
   private readonly ducks: Map<BusId, readonly DuckEntry[]>;
   private readonly automation: Map<BusId, (ms: Ms) => BusParams>;
-  /** 是否存在独奏（构造时由静态 solo 与自动化折点决定，运行期不再变化） */
-  private readonly soloActive: boolean;
   private readonly voices: VoiceEntry[] = [];
   private readonly liveGain = new Map<BusId, LiveRamp>();
   private readonly livePan = new Map<BusId, LiveRamp>();
@@ -188,7 +192,6 @@ export class StreamingMixer {
     this.automation = new Map();
     for (const a of options.graph.automation)
       this.automation.set(a.bus, makeAutomation(a));
-    this.soloActive = anySolo(options.graph);
     /** 来源总线 → 它的发送列表 */
     const sends = new Map<BusId, SendSpec[]>();
     for (const s of options.graph.sends) {
@@ -239,8 +242,8 @@ export class StreamingMixer {
    *
    * 静态参数被覆盖为「从当前值线性过渡到目标值」，rampMs 为 0 即立即生效；
    * 增益钳到 ≥ 0、声像钳到 -1..1。求值优先级：运行期过渡 > 自动化轨迹 > 静态值；
-   * mute/solo 的运行期覆盖优先于自动化与静态值。
-   * 注意独奏判定在构造时定死：运行期把 solo 置真不会让其它总线静音，只影响本总线自身。
+   * mute/solo 的运行期覆盖优先于自动化与静态值。独奏按帧判定：任一条非 master 总线
+   * 处于独奏（静态声明、运行期覆盖或自动化折点）时，其余非 master 总线整块静音。
    *
    * @param id 总线 id；未登记时忽略
    * @param patch 要改的字段（未给出的字段保持原样）
@@ -377,6 +380,40 @@ export class StreamingMixer {
       if (target)
         layVoice(entry.plan, target, startFrame, frames, this.sampleRate, ch);
     }
+    /** 本块逐帧自动化参数：每条总线只求值一次（查询游标只前进），主循环与独奏判定共用 */
+    const blockParams = new Map<BusId, BlockParams>();
+    for (const bus of this.order) {
+      const auto = this.automation.get(bus.id);
+      if (!auto) continue;
+      const gain = new Float32Array(frames);
+      const pan = new Float32Array(frames);
+      const mute = new Uint8Array(frames);
+      const solo = new Uint8Array(frames);
+      for (let fr = 0; fr < frames; fr++) {
+        const ms = ((startFrame + fr) * 1000) / this.sampleRate;
+        const p = auto(ms);
+        gain[fr] = p.gain;
+        pan[fr] = p.pan;
+        mute[fr] = p.mute ? 1 : 0;
+        solo[fr] = p.solo ? 1 : 0;
+      }
+      blockParams.set(bus.id, { gain, pan, mute, solo });
+    }
+    /** 逐帧是否存在独奏：静态声明、运行期覆盖与自动化折点都算，逐帧变化 */
+    const soloFlags = new Uint8Array(frames);
+    for (let fr = 0; fr < frames; fr++) {
+      for (const bus of this.order) {
+        if (bus.id === MASTER_BUS) continue;
+        const patch = this.busOverrides.get(bus.id) ?? {};
+        const p = blockParams.get(bus.id);
+        const solo =
+          patch.solo ?? (p ? p.solo[fr] === 1 : (bus.spec.solo ?? false));
+        if (solo) {
+          soloFlags[fr] = 1;
+          break;
+        }
+      }
+    }
     for (const bus of this.order) {
       /** 本总线输入：效果链就地处理 */
       const sig = this.inputs.get(bus.id)!;
@@ -384,29 +421,29 @@ export class StreamingMixer {
       /** 总线输出缓冲（先清零，再逐帧写入；被静音时保持全零） */
       const target = bus.out;
       target.fill(0, 0, span);
-      const auto = this.automation.get(bus.id);
+      const auto = blockParams.get(bus.id);
       const spec = bus.spec;
       const patch = this.busOverrides.get(bus.id) ?? {};
       const liveGain = this.liveGain.get(bus.id);
       const livePan = this.livePan.get(bus.id);
       for (let fr = 0; fr < frames; fr++) {
         const ms = ((startFrame + fr) * 1000) / this.sampleRate;
-        /** 该帧的自动化参数（无轨迹时为 undefined） */
-        const p = auto ? auto(ms) : undefined;
         const gain = liveGain
           ? rampAt(liveGain, ms, 1)
-          : p
-            ? p.gain
+          : auto
+            ? auto.gain[fr]!
             : (patch.gain ?? spec.gain ?? 1);
         const pan = livePan
           ? rampAt(livePan, ms, 0)
-          : p
-            ? p.pan
+          : auto
+            ? auto.pan[fr]!
             : (patch.pan ?? spec.pan ?? 0);
-        const muted = patch.mute ?? (p ? p.mute : (spec.mute ?? false));
-        /** 该帧是否独奏（独奏集合为空时不影响任何总线） */
-        const solo = patch.solo ?? (p ? p.solo : (spec.solo ?? false));
-        if (muted || (this.soloActive && !solo && bus.id !== MASTER_BUS))
+        const muted =
+          patch.mute ?? (auto ? auto.mute[fr] === 1 : (spec.mute ?? false));
+        /** 该帧是否独奏（逐帧判定：运行期 solo 同样压制未独奏总线） */
+        const solo =
+          patch.solo ?? (auto ? auto.solo[fr] === 1 : (spec.solo ?? false));
+        if (muted || (soloFlags[fr] === 1 && !solo && bus.id !== MASTER_BUS))
           continue;
         if (gain <= 0) continue;
         /** 左右声道的摆位乘子（非立体声输出时都为 1） */
