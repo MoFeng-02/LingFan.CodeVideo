@@ -34,6 +34,25 @@ export type { AudioBufferLoader } from "./audio/web-audio-player";
 export { PacedPreviewExporter } from "./preview/paced-exporter";
 export type { PacedPreviewOptions } from "./preview/paced-exporter";
 export {
+  FrameHasher,
+  auditDeterminism,
+  compareFrameHashes,
+  compareFingerprints,
+  continuityReport,
+  frameDelta,
+  frameFingerprint,
+  sequenceFingerprint,
+} from "./diagnostics";
+export type {
+  AuditOptions,
+  ContinuityOptions,
+  ContinuityReport,
+  DeterminismReport,
+  FrameDelta,
+  FrameHash,
+  FrameMismatch,
+} from "./diagnostics";
+export {
   isAudible,
   evaluateVoice,
   type GainPoint,
