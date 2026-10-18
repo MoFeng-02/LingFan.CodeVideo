@@ -11,10 +11,12 @@ import type {
   AudioOp,
   AudioOptions,
   AudioVoice,
+  GainLike,
   Ms,
   SynthSpec,
 } from "@lingfan-video/contracts";
 import { makeVoice } from "../../domain/audio";
+import { toLinearGain } from "../../domain/audio/gain-units";
 import { makeRenderError } from "./error";
 import type { EvalDeps, TimelineState } from "./engine-types";
 
@@ -98,18 +100,28 @@ export function emitAudio(
       voice.ops.push({ kind: "stop", atMs: state.nowMs, fadeMs });
       live?.stop(state.nowMs, fadeMs);
     },
-    setGain(value: number, rampMs?: Ms): void {
+    setGain(value: GainLike, rampMs?: Ms): void {
       requireCallback("audio.setGain");
-      if (!Number.isFinite(value) || value < 0)
+      // 分贝在这里折算成线性幅度：时间线上的操作记录只存线性值（导出/预览同一口径）
+      let linear: number;
+      try {
+        linear = toLinearGain(value, "setGain");
+      } catch (err) {
         throw makeRenderError(
           "spec_violation",
           "audio",
           state.nowMs,
-          `setGain(${value}) 须为 ≥0 的有限数`,
+          (err as Error).message.replace(/^spec_violation: /, ""),
         );
+      }
       const ramp = Math.max(0, rampMs ?? 0);
-      voice.ops.push({ kind: "gain", atMs: state.nowMs, value, rampMs: ramp });
-      live?.setGain(state.nowMs, value, ramp);
+      voice.ops.push({
+        kind: "gain",
+        atMs: state.nowMs,
+        value: linear,
+        rampMs: ramp,
+      });
+      live?.setGain(state.nowMs, linear, ramp);
     },
     setRate(value: number, rampMs?: Ms): void {
       requireCallback("audio.setRate");

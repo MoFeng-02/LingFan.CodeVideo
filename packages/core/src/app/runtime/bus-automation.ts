@@ -1,4 +1,5 @@
 import type { AutomationPoint, BusId, Ms } from "@lingfan-video/contracts";
+import { toLinearGain } from "../../domain/audio/gain-units";
 import type { TimelineState } from "./engine-types";
 import {
   ensureBusParams,
@@ -48,7 +49,11 @@ function applyPoint(
   point: AutomationPoint,
 ): void {
   if (point.gain !== undefined) {
-    const gain = Math.max(0, point.gain);
+    // 分贝在此折算：轨迹下游（预览/导出）只见线性幅度
+    const gain = Math.max(
+      0,
+      toLinearGain(point.gain, `automation 第 ${point.atMs}ms 点 gain`),
+    );
     registerParamRamp(state, bus, "gain", gain, point.rampMs, point.atMs);
     writeBusParams(state, bus, { gain });
   }

@@ -1,5 +1,6 @@
 import type { Ms } from "../shared/units";
 import type { AudioClip } from "./entities";
+import type { GainLike } from "./gain";
 import type { SynthSpec } from "./synth";
 import type { AudioGraph, BusId, BusPoint } from "./graph";
 
@@ -33,7 +34,7 @@ export interface Envelope {
   readonly points: readonly EnvelopePoint[];
 }
 
-/** 音量与包络：线性增益；fade 在时间线毫秒域（不随变速伸缩） */
+/** 增益与包络：线性幅度（也可写 `{ db }` 由组合子折算）；fade 在时间线毫秒域（不随变速伸缩） */
 export interface AudioGain {
   readonly value: number;
   readonly fadeIn?: Ms;
@@ -91,8 +92,8 @@ export interface AudioHandle {
   readonly alive: boolean;
   /** 停止发声；fadeOutMs 给出收尾淡出 */
   stop(fadeOutMs?: Ms): void;
-  /** 改音量（rampMs 内线性过渡） */
-  setGain(value: number, rampMs?: Ms): void;
+  /** 改音量（rampMs 内线性过渡；可写线性幅度或 `{ db }`） */
+  setGain(value: GainLike, rampMs?: Ms): void;
   /** 改速率（rampMs 内线性过渡；变速即变调） */
   setRate(value: number, rampMs?: Ms): void;
 }

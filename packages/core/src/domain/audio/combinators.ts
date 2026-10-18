@@ -13,16 +13,12 @@ import type {
   AudioVoice,
   Envelope,
   EnvelopePoint,
+  GainLike,
   Ms,
   WarpPoint,
 } from "@lingfan-video/contracts";
-
-/** 契约违约（与引擎其它 spec_violation 同一命名纪律：message 前缀 + Error.name） */
-function violation(message: string): Error {
-  const err = new Error(`spec_violation: ${message}`);
-  err.name = "SpecViolation";
-  return err;
-}
+import { toLinearGain } from "./gain-units";
+import { violation } from "../spec-violation";
 
 function isMs(v: unknown): v is Ms {
   return typeof v === "number" && Number.isFinite(v) && v >= 0;
@@ -35,17 +31,16 @@ export function clip(url: string): AudioClip {
   return { url, kind: "audio" } as AudioClip;
 }
 
-/** 音量与淡入淡出（线性增益；fade 在时间线毫秒域） */
+/** 增益与淡入淡出（可写线性幅度或 `{ db }`；fade 在时间线毫秒域） */
 export function gain(
-  value: number,
+  value: GainLike,
   env?: {
     readonly fadeIn?: Ms;
     readonly fadeOut?: Ms;
     readonly envelope?: Envelope;
   },
 ): AudioGain {
-  if (!Number.isFinite(value) || value < 0)
-    throw violation(`gain(${value}) 须为 ≥0 的有限数`);
+  const linear = toLinearGain(value, "gain");
   const fadeIn = env?.fadeIn;
   const fadeOut = env?.fadeOut;
   if (fadeIn !== undefined && !isMs(fadeIn))
@@ -53,7 +48,7 @@ export function gain(
   if (fadeOut !== undefined && !isMs(fadeOut))
     throw violation(`gain.fadeOut=${String(fadeOut)} 须为 ≥0 的有限毫秒`);
   return {
-    value,
+    value: linear,
     ...(fadeIn === undefined ? {} : { fadeIn }),
     ...(fadeOut === undefined ? {} : { fadeOut }),
     ...(env?.envelope ? { envelope: env.envelope } : {}),

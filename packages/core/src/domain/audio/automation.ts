@@ -1,4 +1,5 @@
 import type { BusAutomationSpec } from "@lingfan-video/contracts";
+import { gainError } from "./gain-units";
 
 /**
  * 声明式自动化点表的形式问题（一次报全，便于静态校验一次性提示）。
@@ -23,8 +24,10 @@ export function automationErrors(spec: BusAutomationSpec): string[] {
         );
       prevAt = p.atMs;
     }
-    if (p.gain !== undefined && (!(p.gain >= 0) || !Number.isFinite(p.gain)))
-      errors.push(`${tag} 第 ${i} 点 gain=${p.gain} 须为 ≥0 的有限数`);
+    if (p.gain !== undefined) {
+      const problem = gainError(p.gain, `${tag} 第 ${i} 点 gain`);
+      if (problem !== null) errors.push(problem);
+    }
     if (
       p.pan !== undefined &&
       (!(Math.abs(p.pan) <= 1) || !Number.isFinite(p.pan))

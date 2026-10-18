@@ -1,5 +1,6 @@
 import type { Ms } from "../shared/units";
 import type { KillOptions } from "../scheduler/entities";
+import type { GainLike } from "./gain";
 
 /** 总线 id；顶层混音母线固定为 `master`，所有未显式指派的 bus 都挂在它下面 */
 export type BusId = string;
@@ -113,10 +114,11 @@ export interface BusAutomation {
  * 声明式自动化点：登记期写下的参数计划，时间线推进到点即生效。
  * 只写要控制的参数（未写的参数不动）；rampMs = 从当前有效值线性过渡的时长，缺省立即。
  * 时刻相对声明它的段落起点，因此同一段被重复播放（spawn 循环圈）时自动同相位平移。
+ * gain 可写线性幅度或 `{ db }`（折算由引擎做，轨迹里只留线性值）。
  */
 export interface AutomationPoint {
   readonly atMs: Ms;
-  readonly gain?: number;
+  readonly gain?: GainLike;
   readonly pan?: number;
   readonly rampMs?: Ms;
 }
@@ -151,8 +153,8 @@ export type BusSendCount = number;
 export interface BusHandle {
   readonly id: BusId;
   readonly alive: boolean;
-  /** 改增益（rampMs 内线性过渡；缺省立即） */
-  gain(value: number, rampMs?: Ms): void;
+  /** 改增益（rampMs 内线性过渡；缺省立即；可写线性幅度或 `{ db }`） */
+  gain(value: GainLike, rampMs?: Ms): void;
   /** 改摆位 -1..1（rampMs 内线性过渡；缺省立即） */
   pan(value: number, rampMs?: Ms): void;
   mute(value: boolean): void;

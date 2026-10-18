@@ -16,12 +16,16 @@ import type { AudioBufferLoader, BusNode, PlayerEnv } from "./types";
 /** 预排提前量（秒）：给加载与调度留余量，避免起点被吞 */
 const SCHEDULE_LEAD_SEC = 0.06;
 
+/** 设备延迟补偿上限（毫秒）：异常大的 outputLatency 宁可少补也不要让画面倒退太多 */
+const LATENCY_CLAMP_MS = 250;
+
 const NOOP = (): void => {};
 
 export class WebAudioOutput implements AudioOutput {
   private readonly sources: AudioScheduledSourceNode[] = [];
   private readonly loaded = new Map<string, Promise<AudioBuffer>>();
   private startedAtSec = 0;
+  private latencyMs = 0;
   private programDurationMs = 0;
   private buses = new Map<BusId, BusNode>();
   private busParams = new Map<BusId, BusUpdate>();
@@ -35,6 +39,7 @@ export class WebAudioOutput implements AudioOutput {
   async begin(program: AudioProgram): Promise<void> {
     this.dispose();
     this.startedAtSec = this.ctx.currentTime + SCHEDULE_LEAD_SEC;
+    this.latencyMs = this.measureLatencyMs();
     this.programDurationMs = program.durationMs;
     this.buildBuses(program.graph);
     await Promise.all(
@@ -87,9 +92,27 @@ export class WebAudioOutput implements AudioOutput {
     this.dispose();
   }
 
-  /** 当前时间线位置（毫秒）：以 begin 锚定的起点为零点，供预览端按同一主时钟排帧 */
+  /**
+   * 当前时间线位置（毫秒）：以 begin 锚定的起点为零点，供预览端按同一主时钟排帧。
+   *
+   * 减去设备延迟：音频上下文里 X 秒排下的样本，要再过 baseLatency + outputLatency
+   * 才真正从扬声器出来。画面若按 ctx.currentTime 推进，就会比听到的声音早这几毫秒；
+   * 这里把时钟整体后移，让「看到的帧」与「听到的样本」在同一时刻对齐。
+   */
   nowMs(): Ms {
-    return (this.ctx.currentTime - this.startedAtSec) * 1000;
+    return (this.ctx.currentTime - this.startedAtSec) * 1000 - this.latencyMs;
+  }
+
+  /** 设备延迟（毫秒）：取上下文自报的两段延迟之和并钳到上限；未知按 0 处理 */
+  private measureLatencyMs(): number {
+    const ctx = this.ctx as AudioContext & {
+      readonly baseLatency?: number;
+      readonly outputLatency?: number;
+    };
+    const total =
+      (Number.isFinite(ctx.baseLatency) ? ctx.baseLatency! : 0) +
+      (Number.isFinite(ctx.outputLatency) ? ctx.outputLatency! : 0);
+    return Math.min(LATENCY_CLAMP_MS, Math.max(0, total * 1000));
   }
 
   /** 按 program.graph 建总线节点图（拓扑固定；缺省 = 声音直连 destination） */

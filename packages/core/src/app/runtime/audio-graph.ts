@@ -7,11 +7,13 @@ import type {
   BusSpec,
   BusUpdate,
   DuckRule,
+  GainLike,
   KillOptions,
   Ms,
   SendSpec,
 } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
+import { toLinearGain } from "../../domain/audio/gain-units";
 import type { CompiledSegment } from "../../domain/simulation/types";
 import type {
   BusParams,
@@ -240,8 +242,13 @@ export function makeBusHandle(deps: EvalDeps, id: BusId): BusHandle {
       if (!kill) return true;
       return state.nowMs < kill.until;
     },
-    gain(value: number, rampMs?: Ms): void {
-      setParam("gain", Math.max(0, value), rampMs);
+    gain(value: GainLike, rampMs?: Ms): void {
+      // 分贝折算成线性幅度后再进轨迹（图与混音端只认线性值）
+      setParam(
+        "gain",
+        Math.max(0, toLinearGain(value, `bus(${JSON.stringify(id)}).gain`)),
+        rampMs,
+      );
     },
     pan(value: number, rampMs?: Ms): void {
       setParam("pan", Math.max(-1, Math.min(1, value)), rampMs);
