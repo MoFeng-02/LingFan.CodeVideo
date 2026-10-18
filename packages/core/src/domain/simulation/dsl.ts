@@ -22,6 +22,7 @@ import type {
   SceneEnv,
   SendSpec,
   SpawnOptions,
+  StartSpec,
   StepFn,
   StepOptions,
   SynthSpec,
@@ -376,16 +377,10 @@ export class Recorder implements SceneEnv {
 /**
  * 链头描述（spec 形式）：把窗口长度、准备函数与登记体打成一个对象传。
  *
- * 与 `startScene(windowMs, body)` 的区别只是形状；适合参数化剧本或从配置构造。
+ * 声明在契约层（`StartSpec`），这里只做转发；与 `startScene(windowMs, body)`
+ * 的区别只是形状，适合参数化剧本或从配置构造。
  */
-export interface StartSpec<P> {
-  /** 段窗口长度（毫秒）：总毫秒池的一段 */
-  window: Ms;
-  /** 可选的一次性准备（资产加载/解码），在登记前跑，可返回 Promise */
-  setup?: SceneInternal<P>["setup"];
-  /** 登记体：只拿 env（链头没有上一幕状态），返回值成为下一段的 prev */
-  run: (env: SceneEnv) => P | void;
-}
+export type { StartSpec };
 
 /**
  * 造链头剧本（毫秒形式）：窗口长度 + 只接 env 的登记体。
