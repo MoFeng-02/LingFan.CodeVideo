@@ -149,7 +149,7 @@ describe("预览适配器：程序投递", () => {
       const live = output.start(voice({ id: "live" }));
       await flush();
       live.setGain(120, 0.5, 30);
-      live.setRate(200, 1.5, 0);
+      live.setRate(200, 1.5, 40);
       live.stop(300, 20);
       const tail = cap.messages.slice(-3).map((m) => m.message);
       expect(tail[0]).toMatchObject({
@@ -164,6 +164,7 @@ describe("预览适配器：程序投递", () => {
         voiceId: "live",
         atMs: 200,
         value: 1.5,
+        rampMs: 40,
       });
       expect(tail[2]).toMatchObject({
         type: "stop",

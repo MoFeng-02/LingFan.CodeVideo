@@ -104,7 +104,12 @@ export function renderMessages(
         message.rampMs,
       );
     } else if (message.type === "rate") {
-      mixer.setVoiceRate(message.voiceId, message.atMs, message.value);
+      mixer.setVoiceRate(
+        message.voiceId,
+        message.atMs,
+        message.value,
+        message.rampMs,
+      );
     } else if (message.type === "stop") {
       mixer.stopVoice(message.voiceId, message.atMs, message.fadeMs);
     }

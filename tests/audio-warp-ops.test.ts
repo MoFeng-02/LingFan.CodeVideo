@@ -20,6 +20,19 @@ describe("运行期操作（voice 求值：setRate / stop / setGain）", () => {
     expect(tl.endMs).toBeCloseTo(600, 6);
   });
 
+  it("setRate 带 rampMs：速率在窗口内线性爬升，源位置按二次段积分", () => {
+    const v = voice(0, {
+      ops: [{ kind: "rate", atMs: 200, value: 2, rampMs: 100 }],
+    });
+    const tl = evaluateVoice(v, src, 10_000);
+    expect(tl.rateAt(150)).toBeCloseTo(1, 6);
+    expect(tl.rateAt(250)).toBeCloseTo(1.5, 6); // 爬坡中点
+    expect(tl.rateAt(350)).toBeCloseTo(2, 6);
+    // 源位置：0..200 匀速 1 = 200；200..250 梯形积分 = 62.5；250..350 匀速 2 = 200
+    expect(tl.sourceMsAt(250)).toBeCloseTo(262.5, 6);
+    expect(tl.sourceMsAt(350)).toBeCloseTo(450, 6);
+  });
+
   it("stop(fadeOut)：终点提前，增益在淡出区间线性归零", () => {
     const v = voice(0, {
       ops: [{ kind: "stop", atMs: 300, fadeMs: 100 }],
