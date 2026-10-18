@@ -235,6 +235,8 @@ export interface TimelineState {
   nowInput: InputSnapshot;
   /** 程序随机源（开工时按种子建一次） */
   random: RandomStream;
+  /** 程序随机源种子（开工时归一化；重复推演复位根流时复用） */
+  randomSeed: number;
   /** 单元随机子流缓存：标签 → 流（同一单元跨帧连续抽取） */
   randomStreams: Map<string, RandomStream>;
   /** 已完成 setup 的场景（每次推演复位；同一场景只跑一次 setup，资产只解码一次） */

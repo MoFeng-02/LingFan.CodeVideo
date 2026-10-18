@@ -70,3 +70,16 @@ export function randomLabel(unitKey: string, spawnKey: string | null): string {
 export function createProgramRandom(seed: number | undefined): RandomStream {
   return createRandomStream(programSeed(seed));
 }
+
+/**
+ * 复位程序随机源：根流按种子重建、单元子流缓存清空。
+ *
+ * 同一引擎实例重复推演（computeAt / collect 多次调用）时，随机必须回到开工状态，
+ * 否则第二次推演从上一轮抽剩的位置继续，同 seed 同剧本会得到不同序列。
+ *
+ * @param state 引擎运行期状态（`randomSeed` 是开工时归一化的种子）
+ */
+export function resetProgramRandom(state: TimelineState): void {
+  state.random = createRandomStream(state.randomSeed);
+  state.randomStreams.clear();
+}

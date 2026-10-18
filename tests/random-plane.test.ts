@@ -117,6 +117,18 @@ describe("引擎装配", () => {
     expect(third).not.toEqual(first);
   });
 
+  it("同一引擎重复推演：随机源回到开工状态，两次序列一致", async () => {
+    const draws: number[] = [];
+    const engine = makeEngine(13);
+    const scene = capture(draws);
+    await engine.run(scene, new MemoryFrameSink());
+    const first = [...draws];
+    draws.length = 0;
+    await engine.run(scene, new MemoryFrameSink());
+    expect(first.length).toBeGreaterThan(0);
+    expect(draws).toEqual(first);
+  });
+
   it("单元各有独立子流：别的单元多抽几次不影响本单元", async () => {
     const a1: number[] = [];
     const b1: number[] = [];

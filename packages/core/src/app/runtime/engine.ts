@@ -17,7 +17,7 @@ import { buildAudioProgram } from "./audio-program";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { EMPTY_INPUT, createInputTrack } from "./input";
-import { createProgramRandom } from "./random";
+import { createProgramRandom, programSeed } from "./random";
 import { flushPendingSpawns } from "./runtime-spawn";
 import { buildSampleGrid, firstAfter } from "./sample-grid";
 import { buildTimeline } from "./timeline-build";
@@ -25,6 +25,8 @@ import type { EvalDeps, RunSummary, TimelineState } from "./engine-types";
 
 /** 引擎可变状态装配（TimelineEngine 独占持有，原子单元经 EvalDeps 显式共享） */
 function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
+  /** 整场随机种子：开工时归一化一次，重复推演复位根流时复用 */
+  const randomSeed = programSeed(opts.seed);
   return {
     opts,
     deadUnits: new Set<string>(),
@@ -51,7 +53,8 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     inCallback: false,
     input: createInputTrack(opts.input),
     nowInput: EMPTY_INPUT,
-    random: createProgramRandom(opts.seed),
+    random: createProgramRandom(randomSeed),
+    randomSeed,
     randomStreams: new Map(),
     setupDone: new WeakSet(),
   };

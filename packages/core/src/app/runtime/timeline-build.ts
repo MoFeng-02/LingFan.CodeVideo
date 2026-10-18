@@ -21,12 +21,14 @@ import { makeRenderError } from "./error";
 import { walkChain } from "./runtime-spawn";
 import { overlapOffset } from "./timeline-spans";
 import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
+import { resetProgramRandom } from "./random";
 
 /**
  * 重入复位（computeAt/collect/run 共用一引擎时防串台）。
  *
  * 时间线结构、声音记录、去重键、总线状态全部清空；setup 记账也重来一次
- * （资产按本次推演的解码器重新加载，跨推演不共享句柄）。
+ * （资产按本次推演的解码器重新加载，跨推演不共享句柄）；随机源回到开工状态，
+ * 同一引擎重复推演仍是同一条序列。
  *
  * @param state 引擎状态（原地清空，不替换对象）
  */
@@ -56,6 +58,8 @@ export function resetTimeline(state: TimelineState): void {
   state.inCallback = false;
   // setup 每次推演重跑一次（资产按本次推演的解码器重新加载，跨推演不共享句柄）
   state.setupDone = new WeakSet();
+  // 随机源回到开工状态：重复推演不得从上一轮抽剩的位置继续
+  resetProgramRandom(state);
 }
 
 /**
