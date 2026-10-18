@@ -11,7 +11,7 @@ import type {
   SynthSpec,
 } from "@lingfan-video/contracts";
 import { WebAudioOutput } from "@lingfan-video/infra";
-import { mixBusGraph } from "../../packages/infra/src/audio/bus-mixer";
+import { mixProgram } from "../../packages/infra/src/audio/dsp";
 import {
   flush,
   makeHarness,
@@ -120,17 +120,23 @@ export function renderImpulse(
     ops: [],
     bus: "fx",
   };
-  return mixBusGraph({
+  // 一帧的 PCM 冲激：单帧源时长 = 1/SR 毫秒，铺轨时只在第 0 帧写入
+  return mixProgram({
     sampleRate: SR,
     channels: 2,
-    frames,
     durationMs: (frames / SR) * 1000,
-    voices: [voice],
     graph,
-    layoutVoice: (_voice, target) => {
-      target[0] = amp;
-      target[1] = amp;
-    },
+    voices: [
+      {
+        voice,
+        pcm: {
+          data: new Float32Array([amp, amp]),
+          sampleRate: SR,
+          channels: 2,
+          durationMs: (1 / SR) * 1000,
+        },
+      },
+    ],
   });
 }
 

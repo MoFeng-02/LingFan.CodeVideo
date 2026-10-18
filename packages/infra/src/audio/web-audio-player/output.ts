@@ -1,90 +1,141 @@
-/** WebAudio 实时预览适配器（AudioOutput 契约的预览端实现）：边跑边发。 */
+/**
+ * WebAudio 实时预览适配器（AudioOutput 契约的预览端实现）。
+ *
+ * 预览不再用内建节点拼效果链：所有声音解码成 PCM 后交给音频线程，
+ * 由与导出端同一份混音内核逐块渲染。因此音色与导出同源，
+ * 两端剩下的差别只有设备延迟与浏览器调度抖动。
+ */
 import type {
-  AudioGraph,
   AudioOutput,
   AudioProgram,
   AudioVoice,
-  BusId,
   BusUpdate,
   LiveVoice,
   Ms,
 } from "@lingfan-video/contracts";
-import { applyBusParams, buildBusGraph } from "./buses";
-import { scheduleSynth, scheduleVoice } from "./schedule";
-import type { AudioBufferLoader, BusNode, PlayerEnv } from "./types";
+import { renderSynth } from "../synth";
+import {
+  MIXER_PROCESSOR,
+  type MixerAck,
+  type MixerMessage,
+  type PcmPayload,
+} from "../worklet/protocol";
+import type { AudioBufferLoader } from "./types";
 
-/** 预排提前量（秒）：给加载与调度留余量，避免起点被吞 */
-const SCHEDULE_LEAD_SEC = 0.06;
+/** 输出声道数（预览与导出一致） */
+const CHANNELS = 2;
 
 /** 设备延迟补偿上限（毫秒）：异常大的 outputLatency 宁可少补也不要让画面倒退太多 */
 const LATENCY_CLAMP_MS = 250;
 
+/** 缺省 worker 入口：由打包器把该 URL 当作模块资源 */
+const DEFAULT_WORKLET_URL = new URL(
+  "../worklet/preview-worklet.ts",
+  import.meta.url,
+).href;
+
 const NOOP = (): void => {};
 
+export interface WebAudioOutputOptions {
+  /** worker 入口（缺省同目录的 worklet 模块；测试与宿主可覆盖） */
+  readonly workletUrl?: string | URL;
+}
+
 export class WebAudioOutput implements AudioOutput {
-  private readonly sources: AudioScheduledSourceNode[] = [];
-  private readonly loaded = new Map<string, Promise<AudioBuffer>>();
+  private node: AudioWorkletNode | null = null;
   private startedAtSec = 0;
   private latencyMs = 0;
-  private programDurationMs = 0;
-  private buses = new Map<BusId, BusNode>();
-  private busParams = new Map<BusId, BusUpdate>();
+  private readonly loaded = new Map<string, Promise<AudioBuffer>>();
 
   constructor(
     private readonly ctx: AudioContext,
     private readonly load: AudioBufferLoader,
+    private readonly options?: WebAudioOutputOptions,
   ) {}
 
-  /** 锚定时间线起点：预加载并预排登记期声音 */
+  /** 锚定时间线起点：加载 worker、投递整条程序、等待音频线程开声 */
   async begin(program: AudioProgram): Promise<void> {
     this.dispose();
-    this.startedAtSec = this.ctx.currentTime + SCHEDULE_LEAD_SEC;
+    if (this.ctx.audioWorklet === undefined)
+      throw new Error(
+        "预览端需要 AudioWorklet：当前音频上下文不支持，无法与导出端共用同一份 DSP",
+      );
     this.latencyMs = this.measureLatencyMs();
-    this.programDurationMs = program.durationMs;
-    this.buildBuses(program.graph);
-    await Promise.all(
-      program.voices
-        .filter((v) => !v.synth)
-        .map((v) => this.bufferOf(v.clip.url)),
-    );
-    for (const voice of program.voices) this.schedule(voice);
+    const url = String(this.options?.workletUrl ?? DEFAULT_WORKLET_URL);
+    await this.ctx.audioWorklet.addModule(url);
+    const node = new AudioWorkletNode(this.ctx, MIXER_PROCESSOR, {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [CHANNELS],
+    });
+    this.node = node;
+    const payloads: { voice: AudioVoice; pcm: PcmPayload }[] = [];
+    for (const voice of program.voices) payloads.push(await this.pcmOf(voice));
+    node.port.postMessage({
+      type: "init",
+      sampleRate: this.ctx.sampleRate,
+      channels: CHANNELS,
+      durationMs: program.durationMs,
+      graph: program.graph ?? EMPTY_GRAPH,
+    } satisfies MixerMessage);
+    for (const payload of payloads) {
+      const message = voiceMessage(payload);
+      node.port.postMessage(message.data, message.transfer);
+    }
+    let resolveStarted: () => void = NOOP;
+    let rejectStarted: (error: Error) => void = NOOP;
+    const opened = new Promise<void>((resolve, reject) => {
+      resolveStarted = resolve;
+      rejectStarted = reject;
+    });
+    node.port.onmessage = (event: MessageEvent<MixerAck>) => {
+      const ack = event.data;
+      if (ack.type === "started") {
+        this.startedAtSec = ack.atSec;
+        resolveStarted();
+      } else rejectStarted(new Error(ack.message));
+    };
+    node.connect(this.ctx.destination);
+    await opened;
   }
 
-  /** 运行期发射：即时排程（起点已过则从偏移接上） */
+  /** 运行期发射：解码后就地投递（起点已过时内核从当前位置接上） */
   start(voice: AudioVoice): LiveVoice {
-    const live = this.schedule(voice);
-    if (live) return live;
-    // 缓冲尚未就绪或已过终点：返回空操作句柄，调用语义不报错（预览可丢，导出不丢）
-    return { stop: NOOP, setGain: NOOP, setRate: NOOP };
+    const handle: LiveVoice = {
+      stop: (atMs, fadeMs) =>
+        this.post({ type: "stop", voiceId: voice.id, atMs, fadeMs }),
+      setGain: (atMs, value, rampMs) =>
+        this.post({ type: "gain", voiceId: voice.id, atMs, value, rampMs }),
+      setRate: (atMs, value) =>
+        this.post({ type: "rate", voiceId: voice.id, atMs, value }),
+    };
+    void this.pcmOf(voice)
+      .then((payload) => {
+        const message = voiceMessage(payload);
+        this.node?.port.postMessage(message.data, message.transfer);
+      })
+      .catch(() => {
+        // 预览允许丢声：加载失败时句柄仍可调用，只是没有声音
+      });
+    return handle;
+  }
+
+  /** 运行期总线参数更新：交给音频线程在同一时间轴上生效 */
+  setBus(update: BusUpdate): void {
+    this.post({ type: "bus", update, atMs: update.at ?? this.nowMs() });
   }
 
   /** 清场（重播/切幕） */
   dispose(): void {
-    for (const n of this.sources.splice(0)) {
-      try {
-        n.stop();
-      } catch {
-        // 未开始的节点 stop 抛 InvalidStateError，忽略
-      }
+    const node = this.node;
+    this.node = null;
+    if (!node) return;
+    node.port.onmessage = null;
+    try {
+      node.disconnect();
+    } catch {
+      // 已断开
     }
-    for (const bus of this.buses.values()) {
-      try {
-        bus.input.disconnect();
-        bus.gain.disconnect();
-        bus.panner?.disconnect();
-      } catch {
-        // 已断开
-      }
-    }
-    this.buses.clear();
-    this.busParams.clear();
-  }
-
-  /** 运行期总线参数更新：gain/pan 直接改节点，mute = gain 归零；solo 由重算统一处理 */
-  setBus(update: BusUpdate): void {
-    if (!this.buses.has(update.id)) return;
-    this.busParams.set(update.id, update);
-    applyBusParams(this.env(), update.id, update.rampMs ?? 0);
   }
 
   /** 兼容旧名：等同 dispose */
@@ -115,11 +166,8 @@ export class WebAudioOutput implements AudioOutput {
     return Math.min(LATENCY_CLAMP_MS, Math.max(0, total * 1000));
   }
 
-  /** 按 program.graph 建总线节点图（拓扑固定；缺省 = 声音直连 destination） */
-  private buildBuses(graph: AudioGraph | undefined): void {
-    const built = buildBusGraph(this.ctx, graph);
-    this.buses = built.buses;
-    this.busParams = built.params;
+  private post(message: MixerMessage): void {
+    this.node?.port.postMessage(message);
   }
 
   private bufferOf(url: string): Promise<AudioBuffer> {
@@ -130,28 +178,71 @@ export class WebAudioOutput implements AudioOutput {
     return p;
   }
 
-  /** 全局时间线毫秒 → 上下文秒（已过起点时为负） */
-  private ctxSecOf(globalMs: Ms): number {
-    return this.startedAtSec + globalMs / 1000;
-  }
-
-  private schedule(voice: AudioVoice): LiveVoice | null {
-    return voice.synth
-      ? scheduleSynth(this.env(), voice)
-      : scheduleVoice(this.env(), voice);
-  }
-
-  /** 排程模块看到的上下文：活动节点表与时间换算 */
-  private env(): PlayerEnv {
-    return {
-      ctx: this.ctx,
-      buses: this.buses,
-      busParams: this.busParams,
-      sources: this.sources,
-      programDurationMs: this.programDurationMs,
-      ctxSecOf: (ms) => this.ctxSecOf(ms),
-      nowMs: () => this.nowMs(),
-      bufferOf: (url) => this.bufferOf(url),
-    };
+  /** 单个声音的 PCM：synth 现场合成，素材走加载器后转成交错布局 */
+  private async pcmOf(
+    voice: AudioVoice,
+  ): Promise<{ voice: AudioVoice; pcm: PcmPayload }> {
+    if (voice.synth) {
+      const pcm = renderSynth(voice.synth, this.ctx.sampleRate, CHANNELS);
+      return { voice, pcm };
+    }
+    const buffer = await this.bufferOf(voice.clip.url);
+    return { voice, pcm: interleave(buffer, this.ctx.sampleRate, CHANNELS) };
   }
 }
+
+/** 声音消息：PCM 缓冲以转移方式交给音频线程（不复制） */
+function voiceMessage(payload: { voice: AudioVoice; pcm: PcmPayload }): {
+  data: MixerMessage;
+  transfer: Transferable[];
+} {
+  const data: MixerMessage = {
+    type: "voice",
+    voice: payload.voice,
+    pcm: payload.pcm,
+  };
+  return { data, transfer: [payload.pcm.data.buffer] };
+}
+
+/** AudioBuffer → 交错 PCM（声道不足复制、过多取前两路；采样率不同则线性重采样） */
+function interleave(
+  buffer: AudioBuffer,
+  sampleRate: number,
+  channels: number,
+): PcmPayload {
+  const srcFrames = buffer.length;
+  const srcRate = buffer.sampleRate;
+  const frames =
+    srcRate === sampleRate
+      ? srcFrames
+      : Math.max(1, Math.round((srcFrames / srcRate) * sampleRate));
+  const data = new Float32Array(frames * channels);
+  const sources = Array.from({ length: channels }, (_, ch) =>
+    buffer.getChannelData(Math.min(ch, buffer.numberOfChannels - 1)),
+  );
+  for (let i = 0; i < frames; i++) {
+    const pos = srcRate === sampleRate ? i : (i / sampleRate) * srcRate;
+    const i0 = Math.min(srcFrames - 1, Math.floor(pos));
+    const i1 = Math.min(srcFrames - 1, i0 + 1);
+    const frac = pos - i0;
+    for (let ch = 0; ch < channels; ch++) {
+      const a = sources[ch]![i0]!;
+      const b = sources[ch]![i1]!;
+      data[i * channels + ch] = a + (b - a) * frac;
+    }
+  }
+  return {
+    data,
+    sampleRate,
+    channels,
+    durationMs: (frames / sampleRate) * 1000,
+  };
+}
+
+/** 无总线图时的空图（与导出端缺省行为一致：声音直连 master） */
+const EMPTY_GRAPH = {
+  buses: [],
+  sends: [],
+  ducks: [],
+  automation: [],
+} as const;

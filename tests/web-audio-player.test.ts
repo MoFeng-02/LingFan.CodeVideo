@@ -1,212 +1,187 @@
 /**
- * 预览端实时发声的生命周期：声音寿命与总时间线终界。
- * 关注点不是听感而是「什么时候停」——源节点必须显式 stop，loop 源尤其：
- * 它本身无限长，不排终止点就会在视频跑完后一直响。
- * 时间映射/包络与导出端同源（evaluateVoice），故终止点与导出端一致。
+ * 预览端适配器：它不再自己搭节点，而是把程序（图 + 声音 PCM）投递给音频线程。
+ * 这里检查消息形状与生命周期：init 先到、PCM 同源、运行期句柄带时间线时刻、
+ * 上下文不支持 AudioWorklet 时显式报错而不是静默降级。
  */
 import { describe, expect, it } from "vitest";
-import type { AudioProgram, AudioVoice, Ms } from "@lingfan-video/contracts";
+import type { AudioProgram, AudioVoice } from "@lingfan-video/contracts";
 import { WebAudioOutput } from "@lingfan-video/infra";
+import { renderSynth } from "../packages/infra/src/audio/synth";
+import { flush, makeHarness } from "./support/audio-harness";
+import { installWorklet } from "./support/worklet-harness";
 
-const START_CTX_SEC = 10;
-/** 与实现一致的预排提前量（秒） */
-const LEAD_SEC = 0.06;
-const T0 = START_CTX_SEC + LEAD_SEC;
+const SR = 48_000;
 
-interface SourceRec {
-  loop: boolean;
-  startAt?: number;
-  offset?: number;
-  stopAt?: number;
-  stopCalled?: boolean;
-  rates: { value: number; at: number }[];
-}
-
-interface ParamEvent {
-  value: number;
-  at: number;
-  ramp: boolean;
-}
-
-/** 最小 AudioContext 替身：记录 source 的 start/stop 与参数自动化即可断言 */
-function makeHarness() {
-  const sources: SourceRec[] = [];
-  const gains: ParamEvent[] = [];
-  const ctx = {
-    currentTime: START_CTX_SEC,
-    destination: {},
-    createBufferSource() {
-      const rec: SourceRec = { loop: false, rates: [] };
-      sources.push(rec);
-      return {
-        buffer: null as AudioBuffer | null,
-        get loop() {
-          return rec.loop;
-        },
-        set loop(v: boolean) {
-          rec.loop = v;
-        },
-        playbackRate: {
-          get value() {
-            return rec.rates.length > 0
-              ? rec.rates[rec.rates.length - 1]!.value
-              : 1;
-          },
-          setValueAtTime(value: number, at: number) {
-            rec.rates.push({ value, at });
-          },
-          linearRampToValueAtTime(value: number, at: number) {
-            rec.rates.push({ value, at });
-          },
-        },
-        connect() {},
-        start(at: number, offset = 0) {
-          rec.startAt = at;
-          rec.offset = offset;
-        },
-        stop(at?: number) {
-          rec.stopAt = at;
-          rec.stopCalled = true;
-        },
-      };
-    },
-    createGain() {
-      const rec = { value: 1 };
-      return {
-        gain: {
-          get value() {
-            return rec.value;
-          },
-          setValueAtTime(value: number, at: number) {
-            rec.value = value;
-            gains.push({ value, at, ramp: false });
-          },
-          linearRampToValueAtTime(value: number, at: number) {
-            rec.value = value;
-            gains.push({ value, at, ramp: true });
-          },
-        },
-        connect() {},
-      };
-    },
-    createStereoPanner() {
-      return { pan: { value: 0 }, connect() {} };
-    },
-  };
-  return { ctx: ctx as unknown as AudioContext, sources, gains };
-}
-
-function voice(startMs: Ms, extra?: Partial<AudioVoice>): AudioVoice {
+function voice(partial: Partial<AudioVoice> = {}): AudioVoice {
   return {
-    id: "v",
-    clip: { url: "clip", kind: "audio" } as AudioVoice["clip"],
-    startMs,
+    id: "v0",
+    clip: { url: "synth:test", kind: "audio" } as AudioVoice["clip"],
+    startMs: 0,
     gain: { value: 1 },
     pan: { value: 0 },
     loop: null,
     rate: null,
     ops: [],
-    ...extra,
+    synth: { wave: "sine", freq: 440, durationMs: 100, gain: 0.5 },
+    ...partial,
   };
 }
 
-function program(durationMs: Ms, voices: readonly AudioVoice[]): AudioProgram {
-  return { durationMs, voices };
+function program(voices: readonly AudioVoice[]): AudioProgram {
+  return { durationMs: 500, voices };
 }
 
-const flush = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+const noClips = (): Promise<AudioBuffer> =>
+  Promise.reject(new Error("测试不加载素材"));
 
-async function playOne(
-  v: AudioVoice,
-  durationMs: number,
-  clipSec = 2,
-): Promise<ReturnType<typeof makeHarness>> {
-  const h = makeHarness();
-  const out = new WebAudioOutput(
-    h.ctx,
-    async () => ({ duration: clipSec }) as AudioBuffer,
-  );
-  await out.begin(program(durationMs, [v]));
-  await flush();
-  return h;
-}
-
-describe("预览发声的生命周期", () => {
-  it("loop 声音在总时间线尾被显式停止（不会越过视频末尾一直响）", async () => {
-    const { sources, gains } = await playOne(voice(0, { loop: {} }), 3000);
-    expect(sources).toHaveLength(1);
-    expect(sources[0]!.loop).toBe(true);
-    expect(sources[0]!.startAt).toBeCloseTo(T0, 4);
-    expect(sources[0]!.stopAt).toBeCloseTo(T0 + 3, 4);
-    // 终点收声同样覆盖 loop（否则停止前的硬切会留一声爆音）
-    expect(
-      gains.some((g) => g.value === 0 && Math.abs(g.at - (T0 + 3)) < 1e-4),
-    ).toBe(true);
+describe("预览适配器：程序投递", () => {
+  it("begin 先发 init：采样率、声道、时长与空图", async () => {
+    const cap = installWorklet();
+    try {
+      await new WebAudioOutput(
+        cap.harness.ctx as unknown as AudioContext,
+        noClips,
+      ).begin(program([]));
+      const init = cap.messages[0]!.message;
+      expect(init.type).toBe("init");
+      if (init.type !== "init") throw new Error("首条消息必须是 init");
+      expect(init.sampleRate).toBe(SR);
+      expect(init.channels).toBe(2);
+      expect(init.durationMs).toBe(500);
+      expect(init.graph.buses).toHaveLength(0);
+    } finally {
+      cap.restore();
+    }
   });
 
-  it("非 loop 短源：播完即停", async () => {
-    const { sources } = await playOne(voice(0), 3000, 0.5);
-    expect(sources[0]!.stopAt).toBeCloseTo(T0 + 0.5, 4);
+  it("声音按程序顺序投递，synth 的 PCM 就是导出的合成结果", async () => {
+    const cap = installWorklet();
+    try {
+      const spec = {
+        wave: "sine",
+        freq: 440,
+        durationMs: 100,
+        gain: 0.5,
+      } as const;
+      const a = voice({ id: "a", synth: spec });
+      const b = voice({ id: "b", startMs: 120, synth: spec });
+      await new WebAudioOutput(
+        cap.harness.ctx as unknown as AudioContext,
+        noClips,
+      ).begin(program([a, b]));
+      const voices = cap.messages.filter((m) => m.message.type === "voice");
+      expect(voices).toHaveLength(2);
+      const first = voices[0]!.message;
+      if (first.type !== "voice") throw new Error("应为声音消息");
+      expect(first.voice.id).toBe("a");
+      const expected = renderSynth(spec, SR, 2);
+      expect(first.pcm.channels).toBe(2);
+      expect(first.pcm.data.length).toBe(expected.data.length);
+      for (let i = 0; i < expected.data.length; i++)
+        expect(first.pcm.data[i]).toBe(expected.data[i]!);
+      expect(voices[0]!.transfer).toHaveLength(1);
+    } finally {
+      cap.restore();
+    }
   });
 
-  it("非 loop 长源：裁到时间线尾，不越界", async () => {
-    const { sources } = await playOne(voice(2000), 3000, 6);
-    expect(sources[0]!.startAt).toBeCloseTo(T0 + 2, 4);
-    expect(sources[0]!.stopAt).toBeCloseTo(T0 + 3, 4);
+  it("素材声音经加载器转成交错 PCM：单声道复制到两路", async () => {
+    const cap = installWorklet();
+    try {
+      const pcm = new Float32Array(100).fill(0.25);
+      const loader = (): Promise<AudioBuffer> =>
+        Promise.resolve({
+          length: pcm.length,
+          sampleRate: SR,
+          numberOfChannels: 1,
+          getChannelData: () => pcm,
+        } as unknown as AudioBuffer);
+      await new WebAudioOutput(
+        cap.harness.ctx as unknown as AudioContext,
+        loader,
+      ).begin(
+        program([
+          voice({
+            synth: undefined,
+            clip: { url: "clip:a", kind: "audio" } as AudioVoice["clip"],
+          }),
+        ]),
+      );
+      const shipped = cap.messages.find(
+        (m) => m.message.type === "voice",
+      )!.message;
+      if (shipped.type !== "voice") throw new Error("应为声音消息");
+      expect(shipped.pcm.channels).toBe(2);
+      expect(shipped.pcm.data.length).toBe(pcm.length * 2);
+      expect(shipped.pcm.data[0]).toBe(0.25);
+      expect(shipped.pcm.data[1]).toBe(0.25);
+    } finally {
+      cap.restore();
+    }
   });
 
-  it("起点已在时间线尾之后：不排声音", async () => {
-    const { sources } = await playOne(voice(3000), 3000);
-    expect(sources).toHaveLength(0);
+  it("dispose 之后再 start：不再投递任何消息", async () => {
+    const cap = installWorklet();
+    try {
+      const output = new WebAudioOutput(
+        cap.harness.ctx as unknown as AudioContext,
+        noClips,
+      );
+      await output.begin(program([]));
+      const before = cap.messages.length;
+      output.dispose();
+      output.start(voice());
+      await flush();
+      expect(cap.messages.length).toBe(before);
+    } finally {
+      cap.restore();
+    }
   });
 
-  it('收尾映射（srcMs: "end"）：终止点跟随压缩后的自然时长', async () => {
-    const { sources } = await playOne(
-      voice(0, {
-        rate: {
-          kind: "warp",
-          points: [
-            { atMs: 0, srcMs: 0 },
-            { atMs: 400, srcMs: "end" },
-          ],
-        },
-      }),
-      1000,
-      1,
-    );
-    expect(sources[0]!.stopAt).toBeCloseTo(T0 + 0.4, 4);
-    expect(sources[0]!.rates[0]!.value).toBeCloseTo(2.5, 6);
+  it("运行期 start：句柄操作以时间线毫秒投递", async () => {
+    const cap = installWorklet();
+    try {
+      const output = new WebAudioOutput(
+        cap.harness.ctx as unknown as AudioContext,
+        noClips,
+      );
+      await output.begin(program([]));
+      const live = output.start(voice({ id: "live" }));
+      await flush();
+      live.setGain(120, 0.5, 30);
+      live.setRate(200, 1.5, 0);
+      live.stop(300, 20);
+      const tail = cap.messages.slice(-3).map((m) => m.message);
+      expect(tail[0]).toMatchObject({
+        type: "gain",
+        voiceId: "live",
+        atMs: 120,
+        value: 0.5,
+        rampMs: 30,
+      });
+      expect(tail[1]).toMatchObject({
+        type: "rate",
+        voiceId: "live",
+        atMs: 200,
+        value: 1.5,
+      });
+      expect(tail[2]).toMatchObject({
+        type: "stop",
+        voiceId: "live",
+        atMs: 300,
+        fadeMs: 20,
+      });
+    } finally {
+      cap.restore();
+    }
   });
 
-  it("dispose() 立即终止全部已排节点（重播/切幕）", async () => {
+  it("上下文不支持 AudioWorklet：显式报错，不静默降级", async () => {
     const h = makeHarness();
-    const out = new WebAudioOutput(
-      h.ctx,
-      async () => ({ duration: 2 }) as AudioBuffer,
+    const output = new WebAudioOutput(
+      h.ctx as unknown as AudioContext,
+      noClips,
     );
-    await out.begin(program(2000, [voice(0, { loop: {} }), voice(500)]));
-    await flush();
-    expect(h.sources).toHaveLength(2);
-    out.dispose();
-    for (const s of h.sources) expect(s.stopCalled).toBe(true);
-  });
-
-  it("运行期 start：即时排程并可操作（stop 排到节点）", async () => {
-    const h = makeHarness();
-    const out = new WebAudioOutput(
-      h.ctx,
-      async () => ({ duration: 2 }) as AudioBuffer,
-    );
-    await out.begin(program(4000, []));
-    const live = out.start(voice(1000, { loop: {} }));
-    await flush();
-    expect(h.sources).toHaveLength(1);
-    expect(h.sources[0]!.startAt).toBeCloseTo(T0 + 1, 4);
-    live.stop(3000, 100);
-    expect(h.sources[0]!.stopCalled).toBe(true);
-    live.setGain(1500, 0.5, 100);
-    live.setRate(2000, 2, 0);
-    out.dispose();
+    await expect(output.begin(program([]))).rejects.toThrow(/AudioWorklet/);
   });
 });

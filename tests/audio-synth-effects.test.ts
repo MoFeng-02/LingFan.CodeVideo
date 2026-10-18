@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { TimelineEngine, clip, start } from "@lingfan-video/core";
 import { OfflineAudioMixer } from "@lingfan-video/infra";
 import { renderSynth } from "../packages/infra/src/audio/synth";
-import { mixBusGraph } from "../packages/infra/src/audio/bus-mixer";
+import { mixProgram } from "../packages/infra/src/audio/dsp";
 import type {
   AudioGraph,
   AudioProgram,
@@ -217,33 +217,22 @@ describe("程序化音源", () => {
       ducks: [],
       automation: [],
     };
-    const out = mixBusGraph({
+    const voice = synthVoice(
+      0,
+      {
+        wave: "sine",
+        freq: 440,
+        durationMs: 400,
+        gain: 0.5,
+      },
+      { bus: "fx" },
+    );
+    const out = mixProgram({
       sampleRate: 48_000,
       channels: 2,
-      frames: 48_000,
       durationMs: 1000,
-      voices: [
-        synthVoice(
-          0,
-          {
-            wave: "sine",
-            freq: 440,
-            durationMs: 400,
-            gain: 0.5,
-          },
-          { bus: "fx" },
-        ),
-      ],
       graph,
-      layoutVoice: (voice, target, outFrames, durationMs) => {
-        // 直接用简单的全幅铺法代替 mixer 的 layoutVoice（delay 只关心时序）
-        const pcm = renderSynth(voice.synth!, 48_000, 2);
-        const offset = Math.round((voice.startMs / 1000) * 48_000) * 2;
-        for (let i = 0; i + offset < target.length && i < pcm.data.length; i++)
-          target[i + offset]! += pcm.data[i]!;
-        void outFrames;
-        void durationMs;
-      },
+      voices: [{ voice, pcm: renderSynth(voice.synth!, 48_000, 2) }],
     });
     expect(energy(out, 0, 90)).toBeLessThan(0.01);
     expect(energy(out, 110, 300)).toBeGreaterThan(1);
@@ -256,29 +245,22 @@ describe("程序化音源", () => {
       ducks: [],
       automation: [],
     };
-    const out = mixBusGraph({
+    const voice = synthVoice(
+      0,
+      {
+        wave: "sine",
+        freq: 440,
+        durationMs: 100,
+        gain: 0.5,
+      },
+      { bus: "verb" },
+    );
+    const out = mixProgram({
       sampleRate: 48_000,
       channels: 2,
-      frames: 48_000,
       durationMs: 1000,
-      voices: [
-        synthVoice(
-          0,
-          {
-            wave: "sine",
-            freq: 440,
-            durationMs: 100,
-            gain: 0.5,
-          },
-          { bus: "verb" },
-        ),
-      ],
       graph,
-      layoutVoice: (voice, target) => {
-        const pcm = renderSynth(voice.synth!, 48_000, 2);
-        for (let i = 0; i < pcm.data.length && i < target.length; i++)
-          target[i]! += pcm.data[i]!;
-      },
+      voices: [{ voice, pcm: renderSynth(voice.synth!, 48_000, 2) }],
     });
     expect(energy(out, 400, 900)).toBeGreaterThan(0.5);
   });

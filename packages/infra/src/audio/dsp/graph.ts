@@ -65,8 +65,7 @@ function topoOrder(
     indeg.set(to, (indeg.get(to) ?? 0) + 1);
   };
   for (const id of buses.keys()) {
-    const p =
-      id === MASTER_BUS ? undefined : (parentOfOf(buses, id) ?? MASTER_BUS);
+    const p = parentOf(buses, id) ?? MASTER_BUS;
     if (p) addEdge(id, p);
   }
   for (const s of sends) addEdge(s.from, s.to);
@@ -91,11 +90,11 @@ function topoOrder(
   return out;
 }
 
-function parentOfOf(buses: Map<BusId, BusSpec>, id: BusId): BusId | undefined {
+function parentOf(buses: Map<BusId, BusSpec>, id: BusId): BusId | undefined {
   if (id === MASTER_BUS) return undefined;
   const p = buses.get(id)?.parent;
   return p && buses.has(p) && p !== id ? p : MASTER_BUS;
 }
 
-export { anySolo, makeAutomation, parentOfOf, topoOrder };
+export { anySolo, makeAutomation, parentOf, topoOrder };
 export type { BusParams };
