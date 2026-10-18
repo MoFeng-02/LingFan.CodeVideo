@@ -27,6 +27,7 @@ import type {
   StepContext,
 } from "@lingfan-video/contracts";
 import { makeSynthDecoder, makeSynthLoader } from "./audio-assets";
+import { INPUT_EVENTS, drawInputOverlay } from "./input-overlay";
 
 // ---------- 三幕剧本（fn 直接在 ctx.canvas 上 2d 绘制） ----------
 
@@ -119,6 +120,8 @@ const act2 = act1.cutTo(2000, (prev, env) => {
       // 总线参数也能逐帧改：铺底随「现场发起」一起收一点
       ctx.bus("music").gain(0.5);
     }
+    // 输入面：读取本帧快照（事件表是数据，不是实时鼠标）
+    drawInputOverlay(ctx);
     return title(
       ctx,
       `${prev.title} :: 第二幕`,
@@ -268,6 +271,7 @@ async function play(): Promise<void> {
       exporter: sink,
       audioOutput: out,
       headless: false,
+      input: INPUT_EVENTS,
       // 预览端画面就是这块 canvas（实时可见），不需要逐帧回读；导出模式缺省会回读。
       // 显式声明「本模式不需要像素」：否则缺省要求有 painter/2D 画布，缺失会直接 spec_violation。
       frames: "allow-blank",
@@ -330,6 +334,7 @@ async function exportMp4(): Promise<void> {
       exporter,
       audio,
       headless: false,
+      input: INPUT_EVENTS,
       onProgress: (done, total) => {
         hud.textContent = `导出 ${done}/${total} 帧…`;
       },

@@ -3,6 +3,7 @@ import type { Handle, KillOptions, Scheduler } from "../scheduler";
 import type { FrameState } from "../feedback";
 import type { AudioClip, AudioHandle, AudioOptions, SynthSpec } from "../audio";
 import type { AudioGraphEnv } from "../audio/graph";
+import type { InputSnapshot } from "../input";
 import type { CanvasEnv, Scene } from "./entities";
 
 /** 运行期音频能力：与 step/loop/spawn 同为上下文方法（能力即上下文，无全局单例） */
@@ -67,6 +68,8 @@ export interface StepContext
   t: Ms;
   frameIndex: number;
   totalTime: Ms;
+  /** 本帧时刻的输入快照（atMs ≤ t 的事件已生效；同帧所有单元共享） */
+  input: InputSnapshot;
   /** 本单元有效帧率（单元声明 > spawn 链 > 基础） */
   fps: number;
   /** = 1000 / 本单元有效帧率 */
@@ -108,6 +111,8 @@ export interface WaitContext
   t: Ms;
   frameIndex: number;
   totalTime: Ms;
+  /** 本时刻的输入快照（与同帧产帧单元拿到的同一份） */
+  input: InputSnapshot;
   /** wait 窗内偏移 */
   localT: Ms;
   duration: Ms;
@@ -131,6 +136,8 @@ export interface LoopContext
   extends CanvasEnv, AudioEnv, AudioGraphEnv, Disposal, OnceEnv {
   parentT: Ms;
   frameIndex: number;
+  /** 本帧时刻的输入快照（atMs ≤ t 的事件已生效；同帧所有单元共享） */
+  input: InputSnapshot;
   /** 本单元有效帧率（单元声明 > spawn 链 > 基础） */
   fps: number;
   /** = 1000 / 本单元有效帧率 */

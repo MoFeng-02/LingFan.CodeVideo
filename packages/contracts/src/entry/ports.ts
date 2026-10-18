@@ -5,6 +5,7 @@ import type { FrameState, ValidationError } from "../feedback";
 import type { AssetSource } from "../asset";
 import type { AudioClock, AudioOutput } from "../audio";
 import type { FrameSource } from "../capture";
+import type { InputEvent } from "../input";
 
 /** 渲染后端 */
 export type Backend = "webgpu" | "webgl" | "2d";
@@ -42,6 +43,12 @@ export interface RenderOptions {
    */
   frames?: "required" | "allow-blank";
   headless?: boolean;
+  /**
+   * 输入事件表（时间线毫秒 + 归一化坐标/按键）：声明式数据，不是实时输入。
+   * 引擎在采样网格上求值快照供 step/loop/wait 回调读取——
+   * 同场景 + 同事件表 = 同帧序列，预览与导出因此不会分叉。
+   */
+  input?: readonly InputEvent[];
   onProgress?(doneFrames: number, totalFrames: number): void;
 }
 

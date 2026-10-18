@@ -9,6 +9,9 @@ import type {
   FrameBitmap,
   FrameIndex,
   FrameState,
+  InputEvent,
+  InputSnapshot,
+  InputTrack,
   Ms,
   SendSpec,
 } from "@lingfan-video/contracts";
@@ -50,6 +53,8 @@ export interface EngineOptions {
   assets?: AssetSource;
   /** 预览端实时音频输出（注入 = 运行期发射即时发声；缺省 = 只记录声音） */
   audioOut?: AudioOutput;
+  /** 输入事件表（缺省 = 空轨道：指针在原点未按下、无按键） */
+  input?: readonly InputEvent[];
 }
 
 export interface RunSummary {
@@ -124,6 +129,10 @@ export interface TimelineState {
   selfPaced: Map<string, { iteration: number; iterStart: Ms }>;
   spans: ChainSpan[];
   timelineEnd: Ms;
+  /** 输入轨道（声明式事件表；逐帧求值出快照） */
+  input: InputTrack;
+  /** 当前帧的输入快照（逐帧求值一次，同帧所有单元共享同一份） */
+  nowInput: InputSnapshot;
   /** 当前求值时间（句柄操作／alive 判定的时间轴依据） */
   nowMs: Ms;
   /** 是否处于回调执行中（句柄操作的合法窗口） */

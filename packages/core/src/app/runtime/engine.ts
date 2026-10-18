@@ -10,6 +10,7 @@ import type { CompiledUnit, SceneEntry } from "../../domain/simulation/types";
 import { buildAudioGraph, flushBusUpdates } from "./audio-graph";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
+import { EMPTY_INPUT, createInputTrack } from "./input";
 import { buildTimeline } from "./timeline-build";
 import type {
   ChainSpan,
@@ -41,6 +42,8 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     timelineEnd: 0,
     nowMs: 0,
     inCallback: false,
+    input: createInputTrack(opts.input),
+    nowInput: EMPTY_INPUT,
   };
 }
 

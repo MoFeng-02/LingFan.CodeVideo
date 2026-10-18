@@ -5,6 +5,7 @@ export * from "./scheduler";
 export * from "./feedback";
 export * from "./scene";
 export * from "./audio";
+export * from "./input";
 export * from "./capture";
 export * from "./export";
 export * from "./asset";
