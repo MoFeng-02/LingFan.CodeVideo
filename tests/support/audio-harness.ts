@@ -7,202 +7,41 @@
  * 只实现被预览端真正调用到的 API；缺的能力一律宁可断言失败，也不静默通过。
  */
 
+import { makeParam, type ParamEvent, type ParamLike } from "./audio-params";
+import type {
+  BiquadRec,
+  CompressorRec,
+  ConvolverRec,
+  DelayRec,
+  Edge,
+  FakeAudioBuffer,
+  GainRec,
+  Harness,
+  NodeKind,
+  OscRec,
+  PannerRec,
+  SourceRec,
+} from "./audio-harness-types";
+
+export { makeParam, paramAt } from "./audio-params";
+export type { ParamEvent, ParamLike } from "./audio-params";
+export type {
+  BiquadRec,
+  CompressorRec,
+  ConvolverRec,
+  DelayRec,
+  Edge,
+  FakeAudioBuffer,
+  GainRec,
+  Harness,
+  NodeKind,
+  OscRec,
+  PannerRec,
+  SourceRec,
+} from "./audio-harness-types";
+
 const START_SEC = 10;
 const SAMPLE_RATE = 48_000;
-
-export interface ParamEvent {
-  readonly value: number;
-  readonly at: number;
-  readonly ramp: boolean;
-}
-
-export interface ParamLike {
-  value: number;
-  setValueAtTime(value: number, at: number): void;
-  linearRampToValueAtTime(value: number, at: number): void;
-  cancelScheduledValues(at?: number): void;
-}
-
-export type NodeKind =
-  | "gain"
-  | "source"
-  | "oscillator"
-  | "delay"
-  | "convolver"
-  | "biquad"
-  | "compressor"
-  | "panner";
-
-export interface Edge {
-  readonly from: number;
-  readonly to: number;
-}
-
-export interface SourceRec {
-  readonly id: number;
-  readonly kind: "source";
-  loop: boolean;
-  startAt?: number;
-  offset?: number;
-  stopAt?: number;
-  /** playbackRate 的自动化事件（与导出端速率表比对） */
-  readonly rate: ParamEvent[];
-  buffer: FakeAudioBuffer | null;
-  playbackRate: ParamLike;
-  connect(target: unknown): void;
-  disconnect(): void;
-  start(at: number, offset?: number): void;
-  stop(at?: number): void;
-}
-
-export interface GainRec {
-  readonly id: number;
-  readonly kind: "gain";
-  /** 写在增益上的自动化事件 */
-  readonly events: ParamEvent[];
-  gain: ParamLike;
-  connect(target: unknown): void;
-  disconnect(): void;
-}
-
-export interface OscRec {
-  readonly id: number;
-  readonly kind: "oscillator";
-  type: string;
-  startAt?: number;
-  stopAt?: number;
-  frequency: ParamLike;
-  detune: ParamLike;
-  /** detune 的自动化事件（预览端把运行期变速写成音分） */
-  readonly detuneEvents: ParamEvent[];
-  connect(target: unknown): void;
-  disconnect(): void;
-  start(at: number): void;
-  stop(at?: number): void;
-}
-
-export interface DelayRec {
-  readonly id: number;
-  readonly kind: "delay";
-  readonly maxDelayTime: number;
-  readonly delayTime: ParamLike;
-  readonly delayEvents: ParamEvent[];
-  connect(target: unknown): void;
-  disconnect(): void;
-}
-
-export interface ConvolverRec {
-  readonly id: number;
-  readonly kind: "convolver";
-  buffer: FakeAudioBuffer | null;
-  connect(target: unknown): void;
-  disconnect(): void;
-}
-
-export interface BiquadRec {
-  readonly id: number;
-  readonly kind: "biquad";
-  type: string;
-  frequency: ParamLike;
-  Q: ParamLike;
-  connect(target: unknown): void;
-  disconnect(): void;
-}
-
-export interface CompressorRec {
-  readonly id: number;
-  readonly kind: "compressor";
-  threshold: ParamLike;
-  ratio: ParamLike;
-  attack: ParamLike;
-  release: ParamLike;
-  knee: ParamLike;
-  connect(target: unknown): void;
-  disconnect(): void;
-}
-
-export interface PannerRec {
-  readonly id: number;
-  readonly kind: "panner";
-  pan: ParamLike;
-  connect(target: unknown): void;
-  disconnect(): void;
-}
-
-/** 预览端从 AudioContext 拿到的最小缓冲形态（含逐声道样本，供 IR/噪声比对） */
-export interface FakeAudioBuffer {
-  readonly numberOfChannels: number;
-  readonly length: number;
-  readonly sampleRate: number;
-  getChannelData(channel: number): Float32Array;
-}
-
-export interface Harness {
-  readonly ctx: AudioContext;
-  readonly sources: SourceRec[];
-  readonly gains: GainRec[];
-  readonly oscs: OscRec[];
-  readonly delays: DelayRec[];
-  readonly convolvers: ConvolverRec[];
-  readonly biquads: BiquadRec[];
-  readonly compressors: CompressorRec[];
-  readonly panners: PannerRec[];
-  /** 每次 createBuffer 的 0 声道样本（噪声/IR 逐样本比对的入口） */
-  readonly buffers: Float32Array[];
-  /** 节点间连线（预览端拓扑） */
-  readonly edges: readonly Edge[];
-  /** 节点类型（按 id 查） */
-  kindOf(id: number): NodeKind | undefined;
-  /** 指向 `id` 的边的来源节点 id（即 `id` 的输入） */
-  inputsOf(id: number): number[];
-  /** 从 `id` 流出的边的目标节点 id */
-  outputsOf(id: number): number[];
-}
-
-/** AudioParam 语义替身：`.value` 直接赋值即时生效（不产生自动化事件） */
-export function makeParam(
-  events: ParamEvent[],
-  rec: { value: number },
-): ParamLike {
-  return {
-    get value() {
-      return rec.value;
-    },
-    set value(v: number) {
-      rec.value = v;
-    },
-    setValueAtTime(value: number, at: number) {
-      rec.value = value;
-      events.push({ value, at, ramp: false });
-    },
-    linearRampToValueAtTime(value: number, at: number) {
-      rec.value = value;
-      events.push({ value, at, ramp: true });
-    },
-    cancelScheduledValues() {},
-  };
-}
-
-/**
- * AudioParam 语义求值：`set` 事件把值保持到下一个事件；
- * `ramp` 事件与上一个事件之间线性插值（WebAudio 的 linearRampToValueAtTime 口径）。
- */
-export function paramAt(events: readonly ParamEvent[], sec: number): number {
-  let anchorAt = Number.NEGATIVE_INFINITY;
-  let anchorValue = 1;
-  for (const e of events) {
-    if (e.at > sec) {
-      if (e.ramp && Number.isFinite(anchorAt) && e.at > anchorAt) {
-        const k = (sec - anchorAt) / (e.at - anchorAt);
-        return anchorValue + (e.value - anchorValue) * k;
-      }
-      return anchorValue;
-    }
-    anchorAt = e.at;
-    anchorValue = e.value;
-  }
-  return anchorValue;
-}
 
 /** 最小 AudioContext 替身：只记录预览端真正写下的节点与参数自动化 */
 export function makeHarness(): Harness {
@@ -282,7 +121,7 @@ export function makeHarness(): Harness {
         },
       };
       ids.set(node, node.id);
-      sources.push(node as unknown as SourceRec);
+      sources.push(node);
       return node as unknown as AudioBufferSourceNode;
     },
     createGain(): GainNode {
@@ -299,7 +138,7 @@ export function makeHarness(): Harness {
         disconnect: noop,
       };
       ids.set(node, node.id);
-      gains.push(node as unknown as GainRec);
+      gains.push(node);
       return node as unknown as GainNode;
     },
     createOscillator(): OscillatorNode {
@@ -325,7 +164,7 @@ export function makeHarness(): Harness {
         },
       };
       ids.set(node, node.id);
-      oscs.push(node as unknown as OscRec);
+      oscs.push(node);
       return node as unknown as OscillatorNode;
     },
     createDelay(maxDelayTime: number): DelayNode {
@@ -343,7 +182,7 @@ export function makeHarness(): Harness {
         disconnect: noop,
       };
       ids.set(node, node.id);
-      delays.push(node as unknown as DelayRec);
+      delays.push(node);
       return node as unknown as DelayNode;
     },
     createConvolver(): ConvolverNode {
@@ -357,7 +196,7 @@ export function makeHarness(): Harness {
         disconnect: noop,
       };
       ids.set(node, node.id);
-      convolvers.push(node as unknown as ConvolverRec);
+      convolvers.push(node);
       return node as unknown as ConvolverNode;
     },
     createBiquadFilter(): BiquadFilterNode {
@@ -375,7 +214,7 @@ export function makeHarness(): Harness {
         disconnect: noop,
       };
       ids.set(node, node.id);
-      biquads.push(node as unknown as BiquadRec);
+      biquads.push(node);
       return node as unknown as BiquadFilterNode;
     },
     createDynamicsCompressor(): DynamicsCompressorNode {
@@ -404,7 +243,7 @@ export function makeHarness(): Harness {
         disconnect: noop,
       };
       ids.set(node, node.id);
-      compressors.push(node as unknown as CompressorRec);
+      compressors.push(node);
       return node as unknown as DynamicsCompressorNode;
     },
     createStereoPanner(): StereoPannerNode {
@@ -419,7 +258,7 @@ export function makeHarness(): Harness {
         disconnect: noop,
       };
       ids.set(node, node.id);
-      panners.push(node as unknown as PannerRec);
+      panners.push(node);
       return node as unknown as StereoPannerNode;
     },
   };
