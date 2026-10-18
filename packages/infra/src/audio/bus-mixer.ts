@@ -356,7 +356,7 @@ function panGain(pan: number, ch: number, outCh: number): number {
   return ch === 0 ? 1 - Math.max(0, p) : 1 - Math.max(0, -p);
 }
 
-/** 延迟线（确定性）：环形缓冲 + 反馈，干湿混合 */
+/** 延迟线（确定性）：逐声道环形缓冲 + 反馈，干湿混合 */
 function delayInPlace(
   buf: Float32Array,
   spec: DelaySpec,
@@ -366,18 +366,19 @@ function delayInPlace(
   const d = Math.max(1, Math.round((spec.delayMs * sr) / 1000));
   const fb = Math.max(0, Math.min(0.95, spec.feedback ?? 0.3));
   const mix = Math.max(0, Math.min(1, spec.mix ?? 0.5));
-  const line = new Float32Array(d);
   const frames = Math.floor(buf.length / ch);
-  let idx = 0;
-  for (let f = 0; f < frames; f++) {
-    for (let c = 0; c < ch; c++) {
+  // 每声道独立成线：共用一条线会让一端的湿声读到另一端的干声（预览端的 DelayNode 也不是这样）
+  for (let c = 0; c < ch; c++) {
+    const line = new Float32Array(d);
+    let idx = 0;
+    for (let f = 0; f < frames; f++) {
       const i = f * ch + c;
       const dry = buf[i]!;
       const wet = line[idx]!;
       line[idx] = dry + wet * fb;
       buf[i] = dry * (1 - mix) + wet * mix;
+      idx = (idx + 1) % d;
     }
-    idx = (idx + 1) % d;
   }
 }
 

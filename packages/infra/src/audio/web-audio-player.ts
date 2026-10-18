@@ -354,7 +354,8 @@ export class WebAudioOutput implements AudioOutput {
    * 与导出端共用同一组包络折点（时值由 spec.durationMs 决定）。
    * 包络与声音增益各自一个增益节点串联：两个线性斜坡相乘即导出端的逐样本乘积，
    * 合进同一个节点则只能按折点取积再线性插值，段内会与导出端偏离。
-   * 预览端振荡器不复刻 rate/warp 的逐样本细节，音高与时长一致。
+   * 声音速率在这里只决定时间线终点：振荡器按声明频率发声，不做重采样；
+   * 运行期 setRate 折算成音分只改音高、不改时长——与导出端的磁带式重采样是两条路径。
    */
   private scheduleSynth(voice: AudioVoice): LiveVoice | null {
     const spec = voice.synth!;

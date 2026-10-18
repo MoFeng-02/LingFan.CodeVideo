@@ -1,7 +1,7 @@
 /**
  * 双端音频等价性度量：同一份声音从「唯一求值点」`evaluateVoice` 出发，
  * 导出端逐样本读 `gainAt/sourceMsAt`，预览端把同一组折点写成 AudioParam 自动化。
- * 本文件用一个记录型 AudioContext 替身抓下预览端的自动化事件，
+ * 记录型 AudioContext 替身见 `tests/support/audio-harness.ts`：它抓下预览端的自动化事件，
  * 再按 AudioParam 语义求值，与导出端的求值函数逐点比对——两者的差就是双端漂移量。
  *
  * 允差只由浮点换算决定（毫秒 ↔ 上下文秒）；结构性差异必须为 0：
@@ -20,6 +20,13 @@ import {
   renderSynth,
   synthEnvelopeAt,
 } from "@lingfan-video/infra";
+import {
+  flush,
+  makeHarness,
+  paramAt,
+  type ParamEvent,
+  type SourceRec,
+} from "./support/audio-harness";
 
 const START_CTX_SEC = 10;
 /** 与实现一致的预排提前量（秒） */
@@ -29,144 +36,6 @@ const T0 = START_CTX_SEC + LEAD_SEC;
 const STEP_MS = 5;
 /** 毫秒 ↔ 上下文秒往返换算的浮点误差上限 */
 const EPS = 1e-6;
-
-interface ParamEvent {
-  value: number;
-  at: number;
-  ramp: boolean;
-}
-
-interface SourceRec {
-  loop: boolean;
-  startAt?: number;
-  offset?: number;
-  stopAt?: number;
-  rate: ParamEvent[];
-}
-
-interface GainRec {
-  events: ParamEvent[];
-}
-
-interface OscRec {
-  startAt?: number;
-  stopAt?: number;
-}
-
-/** 最小 AudioContext 替身：只记录预览端真正写下的节点与参数自动化 */
-function makeHarness() {
-  const sources: SourceRec[] = [];
-  const gains: GainRec[] = [];
-  const oscs: OscRec[] = [];
-  /** 噪声源缓冲：预览端按同一套伪随机序列填样，可与导出端逐样本比对 */
-  const buffers: Float32Array[] = [];
-  const param = (events: ParamEvent[], rec: { value: number }) => ({
-    get value() {
-      return rec.value;
-    },
-    setValueAtTime(value: number, at: number) {
-      rec.value = value;
-      events.push({ value, at, ramp: false });
-    },
-    linearRampToValueAtTime(value: number, at: number) {
-      rec.value = value;
-      events.push({ value, at, ramp: true });
-    },
-    cancelScheduledValues() {},
-  });
-  const ctx = {
-    currentTime: START_CTX_SEC,
-    sampleRate: 48_000,
-    destination: {},
-    createBuffer(channels: number, frames: number) {
-      const data = new Float32Array(frames);
-      buffers.push(data);
-      return {
-        numberOfChannels: channels,
-        length: frames,
-        getChannelData: () => data,
-      } as unknown as AudioBuffer;
-    },
-    createBufferSource() {
-      const rec: SourceRec = { loop: false, rate: [] };
-      sources.push(rec);
-      const rateRec = { value: 1 };
-      return {
-        buffer: null as AudioBuffer | null,
-        get loop() {
-          return rec.loop;
-        },
-        set loop(v: boolean) {
-          rec.loop = v;
-        },
-        playbackRate: param(rec.rate, rateRec),
-        connect() {},
-        disconnect() {},
-        start(at: number, offset = 0) {
-          rec.startAt = at;
-          rec.offset = offset;
-        },
-        stop(at?: number) {
-          rec.stopAt = at;
-        },
-      };
-    },
-    createGain() {
-      const rec: GainRec = { events: [] };
-      gains.push(rec);
-      return {
-        gain: param(rec.events, { value: 1 }),
-        connect() {},
-        disconnect() {},
-      };
-    },
-    createStereoPanner() {
-      return { pan: { value: 0 }, connect() {}, disconnect() {} };
-    },
-    createOscillator() {
-      const rec: OscRec = {};
-      oscs.push(rec);
-      return {
-        type: "sine",
-        frequency: { value: 440 },
-        detune: { value: 0 },
-        connect() {},
-        disconnect() {},
-        start(at: number) {
-          rec.startAt = at;
-        },
-        stop(at?: number) {
-          rec.stopAt = at;
-        },
-      };
-    },
-  };
-  return { ctx: ctx as unknown as AudioContext, sources, gains, oscs, buffers };
-}
-
-/**
- * AudioParam 语义求值：`set` 事件把值保持到下一个事件；
- * `ramp` 事件与上一个事件之间线性插值（WebAudio 的 linearRampToValueAtTime 口径）。
- */
-function paramAt(events: readonly ParamEvent[], sec: number): number {
-  let anchorAt = Number.NEGATIVE_INFINITY;
-  let anchorValue = 1;
-  for (const e of events) {
-    if (e.at > sec) {
-      if (e.ramp && Number.isFinite(anchorAt) && e.at > anchorAt) {
-        const k = (sec - anchorAt) / (e.at - anchorAt);
-        return anchorValue + (e.value - anchorValue) * k;
-      }
-      return anchorValue;
-    }
-    anchorAt = e.at;
-    anchorValue = e.value;
-  }
-  return anchorValue;
-}
-
-const flush = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
 
 interface Preview {
   source: SourceRec;
@@ -242,7 +111,8 @@ async function previewNoiseOf(
   return h.buffers[0]!;
 }
 
-/** 求两个求值函数在 [from, to) 网格上的最大绝对差 */ function maxDelta(
+/** 求两个求值函数在 [from, to) 网格上的最大绝对差 */
+function maxDelta(
   from: Ms,
   to: Ms,
   a: (ms: Ms) => number,
