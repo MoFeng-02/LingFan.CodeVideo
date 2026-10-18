@@ -8,8 +8,19 @@
 import type { FrameHandle } from "@lingfan-video/contracts";
 import type { CompositeInput, Compositor } from "./types";
 
+/**
+ * 创建 Canvas2D 合成器。
+ *
+ * 优先用 `OffscreenCanvas`（可在 worker 里跑），环境没有时退回 DOM canvas；
+ * 两次创建都拿不到 2D 上下文就在 `begin` 里报错，不会静默降级成空帧。
+ * 兜底路径因此是「有 2D 画布就能出片」，不要求 WebGL2/WebGPU。
+ *
+ * @returns 合成器实例；`begin` 前不可调用 `composite`
+ */
 export function createCanvas2dCompositor(): Compositor {
+  /** 复用的输出画布：`begin` 时创建，之后每帧原地重画 */
   let canvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+  /** 输出画布的 2D 上下文，与 `canvas` 同生命周期 */
   let ctx: CanvasRenderingContext2D | null = null;
 
   return {
@@ -26,11 +37,22 @@ export function createCanvas2dCompositor(): Compositor {
       }) as CanvasRenderingContext2D | null;
       if (!ctx) throw new Error("Canvas2D 合成器初始化失败：拿不到 2d 上下文");
     },
+    /**
+     * 合成一帧：清屏 → 画底图 → 按顺序叠层 → 交回画布句柄。
+     *
+     * 每帧都从清空开始（不做增量合成），因此必须能接受大面积透明底图；
+     * `glow` 层用 `lighter` 叠加，其余用 `source-over`。句柄借用同一块画布，
+     * `close()` 是空操作，下一帧会把它覆盖。
+     */
     async composite(input: CompositeInput): Promise<FrameHandle> {
       if (!canvas || !ctx)
         throw new Error("Canvas2D 合成器未初始化：先调 begin()");
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
+      // 每帧都是独立合成：底图允许大面积透明（`frames: "allow-blank"`），
+      // 上一帧的像素不能留下来。GPU 合成器同样每帧清到不透明黑，
+      // 两档合成器的输出才对得上。
+      ctx.clearRect(0, 0, input.width, input.height);
       ctx.drawImage(
         input.base as CanvasImageSource,
         0,
@@ -60,6 +82,7 @@ export function createCanvas2dCompositor(): Compositor {
         },
       };
     },
+    /** 释放引用：画布与上下文交给 GC，之后需重新 `begin` 才能合成 */
     dispose() {
       canvas = null;
       ctx = null;
