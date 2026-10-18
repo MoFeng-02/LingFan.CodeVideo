@@ -114,9 +114,10 @@ class BiquadUnit implements EffectUnit {
 }
 
 /**
- * 压缩器：峰值检测 + 硬拐点，env 与 reduction 两个状态。
+ * 压缩器：峰值检测 + 拐点过渡，env 与 reduction 两个状态。
  *
- * 超过 thresholdDb 的部分按 ratio 压缩（硬拐点，不做 kneeDb 软过渡）；
+ * 超过 thresholdDb 的部分按 ratio 压缩：`kneeDb` 缺省（0）是硬拐点，给正值时
+ * 在拐点上下各 knee/2 dB 内按二次曲线过渡（软拐点），两段在跨度端点上与硬拐点衔接。
  * 压缩量的增减各用一阶平滑（加深走 attack，恢复走 release）。
  */
 class CompressorUnit implements EffectUnit {
@@ -125,13 +126,15 @@ class CompressorUnit implements EffectUnit {
   private readonly release: number;
   /** 压缩比（≥ 1） */
   private readonly ratio: number;
+  /** 软拐点宽度（dB，≥ 0；0 = 硬拐点） */
+  private readonly knee: number;
   /** 峰值包络（线性幅度） */
   private env = 0;
   /** 当前增益变化量（dB，≤ 0） */
   private reduction = 0;
 
   /**
-   * @param spec 压缩器规格：阈值（dBFS）、压缩比、attack/release（毫秒）
+   * @param spec 压缩器规格：阈值（dBFS）、压缩比、attack/release（毫秒）、kneeDb（dB，缺省 0）
    * @param sr 采样率（Hz）
    * @param ch 声道数（用多声道峰值做联动检测）
    */
@@ -143,6 +146,7 @@ class CompressorUnit implements EffectUnit {
     this.attack = onePole(spec.attackMs, sr);
     this.release = onePole(spec.releaseMs, sr);
     this.ratio = Math.max(1, spec.ratio);
+    this.knee = Math.max(0, spec.kneeDb ?? 0);
   }
 
   /** 逐帧联动压缩：所有声道共用同一个乘子 */
@@ -159,8 +163,18 @@ class CompressorUnit implements EffectUnit {
       this.env = coef * this.env + (1 - coef) * peak;
       const db = 20 * Math.log10(Math.max(this.env, SILENT));
       const over = db - this.spec.thresholdDb;
-      /** 目标压缩量（dB，≤ 0）：超出阈值的部分按压缩比折算 */
-      const target = over > 0 ? -(over * (1 - 1 / this.ratio)) : 0;
+      /** 目标压缩量（dB，≤ 0）：硬拐点按超出量折算；软拐点在 ±knee/2 内二次过渡 */
+      let target: number;
+      if (this.knee > 0) {
+        /** 拐点曲线上的位置（dB）：0 = 拐点下沿，knee = 拐点上沿 */
+        const x = over + this.knee / 2;
+        if (x <= 0) target = 0;
+        else if (x >= this.knee)
+          target = -(x - this.knee / 2) * (1 - 1 / this.ratio);
+        else target = (1 / this.ratio - 1) * ((x * x) / (2 * this.knee));
+      } else {
+        target = over > 0 ? -(over * (1 - 1 / this.ratio)) : 0;
+      }
       /** 压缩量本身的平滑系数（压得更狠时走 attack） */
       const smooth = target < this.reduction ? this.attack : this.release;
       this.reduction = smooth * this.reduction + (1 - smooth) * target;

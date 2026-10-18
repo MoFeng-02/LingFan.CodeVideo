@@ -35,7 +35,10 @@ export interface CompressorSpec {
   readonly attackMs: Ms;
   /** 释放时长（毫秒） */
   readonly releaseMs: Ms;
-  /** 软拐点宽度（dB）；当前压缩按硬拐点计算，此字段暂不参与 */
+  /**
+   * 软拐点宽度（dB，≥ 0）：缺省 0 = 硬拐点；给正值时在阈值上下各 half-knee 内
+   * 按二次曲线过渡，两端与硬拐点曲线衔接。
+   */
   readonly kneeDb?: number;
 }
 
