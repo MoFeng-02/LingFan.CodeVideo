@@ -1,3 +1,13 @@
+/**
+ * 单段编译：把登记期节点流展平成以毫秒计的编译产物。
+ *
+ * 这是「登记（相对游标）」到「运行（绝对时刻）」的唯一转换点：本文件不做平台调用，
+ * 只做纯计算，因此同一份编译产物可被校验、预览、出片共用。展平后每个单元都带
+ * 段内绝对窗口与已解析的采样密度，运行期不再回溯节点树。
+ *
+ * 关键约定：`cursor` 只被 `step`/`wait`/`par` 推进；`loop`/`spawn`/`audio`/`layer` 等
+ * 记锚点但不推进。帧窗池由本文件按 `min` / `max` 规则夹取，长度不会超过段窗口。
+ */
 import type {
   BusAutomationSpec,
   BusSpec,
@@ -21,13 +31,23 @@ import type {
 const NOOP: CompiledUnit["call"] = () => {};
 
 /**
- * 单段编译：把登记流（Recorder.nodes）展平为绝对时间单元。
+ * 单段编译：把登记流（`Recorder.nodes`）展平为段内绝对时间的单元、音频与层声明。
+ *
  * 规则：
- * - cursor 只被 step/wait/par 推进；loop 窗口 = min(ms×times, 段尾-起点)
- * - step.at 为窗外绝对偏移（越窗 → window_overflow 由 validate/render 报）
- * - spawn 锚点 = 登记 cursor + options.at
- * - transitionTo = 提前收窗：anchor 之后的本段节点不活跃
+ * - `cursor` 只被 `step`/`wait`/`par` 推进；`loop` 窗口 = `min(ms×times, 段尾-起点)`
+ * - `step.at` 为相对登记位置的偏移（可为负；越窗由校验报 `window_overflow`）
+ * - `spawn` 锚点 = 登记 `cursor` + `options.at`，链时长顺 `next` 累加
+ * - `transitionTo` = 提前收窗：`anchor` 之后的本段节点不再活跃（遇到即停）
  * - 单元有效帧率 = 单元声明 > 继承（spawn 链级）> 基础；编译期解析定死
+ *
+ * @param sceneId 段标识（诊断与聚合键用；只透传进产物，不参与计算）
+ * @param duration 段窗口长度（毫秒）：所有单元窗口的上界
+ * @param nodes 登记期节点流（按登记顺序；本函数不修改它）
+ * @param bodyResult 本段 body 的返回值，成为链上下一幕 body 的 prev
+ * @param baseFps 引擎基础采样密度（帧/秒）：单元/链都未声明时用它
+ * @param inheritedFps 外层继承的采样密度（帧/秒，如 spawn 链级）；undefined = 用 baseFps
+ * @returns 单段编译结果（单元含绝对窗口、音频/层含段内相对锚点）
+ * @throws spec_violation 过场重叠窗吃满整段时（没有可重叠的收窗长度）
  */
 export function compileSegment(
   sceneId: string,
@@ -128,7 +148,7 @@ export function compileSegment(
                 order,
               });
             }
-            local += window;
+            // 重复是后台并行的：不推进 cursor，后续节点仍从 local 起
             order++;
           }
           break;

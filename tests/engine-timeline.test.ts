@@ -48,6 +48,42 @@ describe("链式推进与 prev 传递", () => {
   });
 });
 
+describe("loop 是后台重复（不占帧窗池）", () => {
+  it("loop 不推进 cursor：后续 step 仍在 loop 登记处的时间上开始", async () => {
+    const marks: number[] = [];
+    const scene = createScene(1_000, (_prev, env) => {
+      env.step(200, (ctx) => {
+        marks.push(ctx.t);
+      });
+      // 500ms × 4 的重复：只占后台时间，不占 cursor
+      env.loop({
+        ms: 500,
+        times: 4,
+        fn: () => undefined,
+      });
+      env.step(200, (ctx) => {
+        marks.push(ctx.t);
+      });
+    });
+    const summary = await makeEngine().run(scene, new MemoryFrameSink());
+    // 第二个 step 的窗口是 [200, 400)，不是 [2200, 2400)
+    expect(Math.max(...marks)).toBeGreaterThanOrEqual(200);
+    expect(Math.max(...marks)).toBeLessThan(400);
+    // 采样网格是两步的并集：15 个点 = 200ms/33.3 ≈ 6 点 + 200ms/33.3 ≈ 6 点（互不重叠时）
+    expect(summary.durationMs).toBe(1_000);
+  });
+
+  it("loop 的内容末点仍计入时间线内容上界（后台出帧到重复结束）", async () => {
+    const seen: number[] = [];
+    const scene = createScene(2_000, (_prev, env) => {
+      env.loop({ ms: 400, times: 5, fn: (ctx) => seen.push(ctx.parentT) });
+    });
+    await makeEngine().run(scene, new MemoryFrameSink());
+    // 最后一批迭代在 1600..2000 之间仍在求值
+    expect(Math.max(...seen)).toBeGreaterThanOrEqual(1_600);
+  });
+});
+
 describe("spawn 链与保活", () => {
   it("跨段背景：forever spawn 存活到时间线尽头", async () => {
     const bg = createScene(100, () => {});
