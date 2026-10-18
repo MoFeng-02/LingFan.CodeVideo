@@ -22,6 +22,7 @@ import { TimelineEngine, type EngineOptions } from "./app/runtime";
 export { makeRenderError } from "./app/runtime/error";
 export { TimelineEngine } from "./app/runtime/engine";
 export { createInputTrack } from "./app/runtime/input";
+export { createRandomStream } from "./domain/random/stream";
 export type { EngineOptions, RunSummary } from "./app/runtime/engine-types";
 export { validate } from "./domain/validation";
 export {
@@ -66,6 +67,7 @@ function assemble(opts: RenderOptions): {
     assets: opts.assets ?? makeDefaultAssets(),
     audioOut: opts.audioOutput,
     input: opts.input,
+    seed: opts.seed,
   });
   // 帧像素来源：单一事实来源是绘制目标本身（step 回调画在 canvas 上，帧从画布回读）。
   // 注入 painter = GPU/离屏/自定义合成路径自绘；缺省 = 2D 回读；

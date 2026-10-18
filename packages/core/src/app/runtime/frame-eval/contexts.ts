@@ -2,6 +2,7 @@ import type {
   FrameIndex,
   LoopContext,
   Ms,
+  RandomStream,
   RenderError,
   StepContext,
   WaitContext,
@@ -13,8 +14,21 @@ import type {
 import { makeRenderError } from "../error";
 import type { ChainSpan, EvalDeps, SpawnChain } from "../engine-types";
 import { dynamicSpawn, schedulerFacade } from "../spawn-handle";
+import { randomLabel, unitRandomStream } from "../random";
 import { audioOf, graphOf, onceOf, selfDisposeOf } from "./capabilities";
 import type { DisposalInfo } from "./disposal";
+
+/** 单元随机子流：同一单元实例一条；spawn 出来的实例各走各的子流 */
+function randomOf(
+  deps: EvalDeps,
+  unit: CompiledUnit,
+  chain: SpawnChain | null,
+): RandomStream {
+  return unitRandomStream(
+    deps.state,
+    randomLabel(unit.key, chain?.key ?? null),
+  );
+}
 
 function wrapThrow(e: unknown, sceneId: string, t: Ms, what: string): never {
   if ((e as RenderError).kind) throw e;
@@ -79,6 +93,7 @@ export function evalStep(
     frameIndex: f,
     totalTime: deps.state.timelineEnd,
     input: deps.state.nowInput,
+    random: randomOf(deps, unit, chain),
     fps: uf,
     deltaTime: 1000 / uf,
     localT: localIn,
@@ -120,6 +135,7 @@ export function evalLoopIter(
     parentT: t - span.start,
     frameIndex: f,
     input: deps.state.nowInput,
+    random: randomOf(deps, unit, chain),
     fps: uf,
     deltaTime: 1000 / uf,
     iteration: unit.loop!.iteration,
@@ -160,6 +176,7 @@ export function evalWait(
     frameIndex: f,
     totalTime: deps.state.timelineEnd,
     input: deps.state.nowInput,
+    random: randomOf(deps, unit, null),
     localT: localIn,
     duration,
     progress: duration > 0 ? localIn / duration : 0,
@@ -210,6 +227,7 @@ export function evalSelfPacedLoop(
     parentT: t - span.start,
     frameIndex: f,
     input: deps.state.nowInput,
+    random: randomOf(deps, unit, chain),
     fps: uf,
     deltaTime: 1000 / uf,
     iteration: cur.iteration,

@@ -11,6 +11,7 @@ import { buildAudioGraph, flushBusUpdates } from "./audio-graph";
 import { makeRenderError } from "./error";
 import { evaluateFrame } from "./frame-eval";
 import { EMPTY_INPUT, createInputTrack } from "./input";
+import { createProgramRandom } from "./random";
 import { buildTimeline } from "./timeline-build";
 import type {
   ChainSpan,
@@ -44,6 +45,8 @@ function makeState(opts: EvalDeps["state"]["opts"]): TimelineState {
     inCallback: false,
     input: createInputTrack(opts.input),
     nowInput: EMPTY_INPUT,
+    random: createProgramRandom(opts.seed),
+    randomStreams: new Map(),
   };
 }
 

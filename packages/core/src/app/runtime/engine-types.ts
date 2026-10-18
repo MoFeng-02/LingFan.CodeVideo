@@ -13,6 +13,7 @@ import type {
   InputSnapshot,
   InputTrack,
   Ms,
+  RandomStream,
   SendSpec,
 } from "@lingfan-video/contracts";
 import type {
@@ -55,6 +56,8 @@ export interface EngineOptions {
   audioOut?: AudioOutput;
   /** 输入事件表（缺省 = 空轨道：指针在原点未按下、无按键） */
   input?: readonly InputEvent[];
+  /** 整场随机种子（缺省 = DEFAULT_PROGRAM_SEED；非法值开工即炸） */
+  seed?: number;
 }
 
 export interface RunSummary {
@@ -133,6 +136,10 @@ export interface TimelineState {
   input: InputTrack;
   /** 当前帧的输入快照（逐帧求值一次，同帧所有单元共享同一份） */
   nowInput: InputSnapshot;
+  /** 程序随机源（开工时按种子建一次） */
+  random: RandomStream;
+  /** 单元随机子流缓存：标签 → 流（同一单元跨帧连续抽取） */
+  randomStreams: Map<string, RandomStream>;
   /** 当前求值时间（句柄操作／alive 判定的时间轴依据） */
   nowMs: Ms;
   /** 是否处于回调执行中（句柄操作的合法窗口） */

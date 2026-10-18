@@ -5,6 +5,12 @@ import type { AudioClip, AudioHandle, AudioOptions, SynthSpec } from "../audio";
 import type { AudioGraphEnv } from "../audio/graph";
 import type { InputSnapshot } from "../input";
 import type { CanvasEnv, Scene } from "./entities";
+import type { RandomStream } from "./random";
+
+/** 运行期随机能力：每个单元实例一条独立子流（同 seed + 同调用序列 = 同结果） */
+export interface RandomEnv {
+  readonly random: RandomStream;
+}
 
 /** 运行期音频能力：与 step/loop/spawn 同为上下文方法（能力即上下文，无全局单例） */
 export interface AudioEnv {
@@ -64,7 +70,7 @@ export interface OnceEnv {
 }
 
 export interface StepContext
-  extends CanvasEnv, AudioEnv, AudioGraphEnv, Disposal, OnceEnv {
+  extends CanvasEnv, AudioEnv, AudioGraphEnv, Disposal, OnceEnv, RandomEnv {
   t: Ms;
   frameIndex: number;
   totalTime: Ms;
@@ -106,7 +112,7 @@ export interface WaitOptions {
  * 需要画东西的段落用 step（会产帧）。
  */
 export interface WaitContext
-  extends AudioEnv, AudioGraphEnv, Disposal, OnceEnv {
+  extends AudioEnv, AudioGraphEnv, Disposal, OnceEnv, RandomEnv {
   /** 全局时间线时刻 */
   t: Ms;
   frameIndex: number;
@@ -133,7 +139,7 @@ export interface LoopSpec {
 }
 
 export interface LoopContext
-  extends CanvasEnv, AudioEnv, AudioGraphEnv, Disposal, OnceEnv {
+  extends CanvasEnv, AudioEnv, AudioGraphEnv, Disposal, OnceEnv, RandomEnv {
   parentT: Ms;
   frameIndex: number;
   /** 本帧时刻的输入快照（atMs ≤ t 的事件已生效；同帧所有单元共享） */

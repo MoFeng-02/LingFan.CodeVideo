@@ -49,6 +49,12 @@ export interface RenderOptions {
    * 同场景 + 同事件表 = 同帧序列，预览与导出因此不会分叉。
    */
   input?: readonly InputEvent[];
+  /**
+   * 整场随机种子（缺省 DEFAULT_PROGRAM_SEED）：只决定 `ctx.random` 的抽取序列。
+   * 同一剧本 + 同一 seed + 同一调用序列 = 同一帧序列；换 seed 就是换一次抽取。
+   * 随机是数据：不写进代码的隐式熵，才能让「视频 = 一次运行的录像」成立。
+   */
+  seed?: number;
   onProgress?(doneFrames: number, totalFrames: number): void;
 }
 
