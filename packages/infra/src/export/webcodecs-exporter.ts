@@ -52,9 +52,9 @@ const MAX_ENCODE_QUEUE = 16;
  * 第一帧到来时才建视频编码器，第一块音频到来时才建音频编码器——所以纯视频
  * 导出不会多开一个音频编码器。
  *
- * 编码错误（平台编码器异步报错）通过 `error` 回调抛出，调用方需要自行
- * 捕获时序上的失败；`finalize` 里先 `flush` 让所有待编码块出队，因此返回时
- * 封装已完成、`output` 是可直接落盘的完整文件字节。
+ * 编码错误（平台编码器异步报错）由 `error` 回调记录，之后任何写入/收尾都按
+ * 同一错误失败，不会静默继续；`finalize` 里先 `flush` 让所有待编码块出队，
+ * 因此返回时封装已完成、`output` 是可直接落盘的完整文件字节。
  */
 export class WebCodecsExporter implements Exporter {
   /** 实现标识：契约里的 `webcodecs` */
@@ -85,8 +85,10 @@ export class WebCodecsExporter implements Exporter {
   private count = 0;
   /** 最后一帧的时间戳（毫秒），作为 `ExportResult.durationMs` */
   private durationMs: Ms = 0;
-  /** 是否已 `finalize`；置位后一切写入都抛错 */
+  /** 是否已 `finalize` 成功；置位后一切写入都抛错 */
   private finalized = false;
+  /** `finalize` 是否正在执行：拒绝并发/重入，避免同一容器被封装两次 */
+  private finalizing = false;
   /** 首个异步编码错误：编码器的 `error` 回调不在写调用链上，必须自己接住再回放 */
   private failure: Error | null = null;
   /** 正在等待编码队列出队的调用方（错误到来时统一唤醒，避免永远卡住） */
@@ -199,7 +201,8 @@ export class WebCodecsExporter implements Exporter {
    * 内部按每块最多 4096 个采样帧切分后逐块提交（限制单次 `AudioData` 大小），
    * 每块都转成平面布局（`f32-planar`）并等待编码队列出队，因此一次调用
    * 期间可能长时间 await。布局（采样率/声道数）由首块定下，之后不一致即抛
-   * `SpecViolation`——同一条音轨不能中途换布局。
+   * `SpecViolation`——同一条音轨不能中途换布局；样本数不整除声道的块在
+   * 定布局之前就被拒，不会占掉一条坏布局。
    *
    * @param samples 交错 Float32 PCM；长度必须是 `channels` 的整数倍，元素取值 −1..1
    * @param sampleRate 采样率（赫兹）
@@ -216,7 +219,7 @@ export class WebCodecsExporter implements Exporter {
       throw new Error(
         "WebCodecsExporter.writeAudio 需要 WebCodecs 环境（浏览器）；Node 无音频编码",
       );
-    this.ensureAudioEncoder(sampleRate, channels);
+    // 先校验样本数：布局一旦被首块定下就不可更改，坏块不能占掉布局
     if (samples.length % channels !== 0)
       throw Object.assign(
         new Error(
@@ -224,7 +227,8 @@ export class WebCodecsExporter implements Exporter {
         ),
         { name: "SpecViolation" },
       );
-    /** 本次调用覆盖的采样帧数（每帧含 `channels` 个样本） */
+    this.ensureAudioEncoder(sampleRate, channels);
+    /** 采样帧数（每帧含 `channels` 个样本） */
     const totalFrames = samples.length / channels;
     for (let off = 0; off < totalFrames; off += AUDIO_BLOCK_FRAMES) {
       /** 本块采样帧数：正常取满上限，尾块取余数 */
@@ -253,14 +257,20 @@ export class WebCodecsExporter implements Exporter {
    * 必须至少写入过一帧（否则抛错）；还必须拿到 AVC 参数集（SPS/PPS），
    * 它们来自编码器的 `decoderConfig`，拿不到就无法写 `avcC`。
    * 返回时所有编码块都已入容器，`output` 是完整的 mp4 字节。
-   * 重复调用会抛 `SpecViolation`（`finalized` 已置位）。
+   * 成功后重复调用会抛 `SpecViolation`；封装阶段抛错时 `finalized` 不置位，
+   * 可用同一实例重试（编码器已在首次收尾时关闭，重试只重新封装）。
    *
    * @returns 产物字节、帧数与时长（毫秒）；`durationMs` 是最后一帧的时间戳
    */
   async finalize(): Promise<ExportResult> {
     this.assertOpen("finalize");
+    if (this.finalizing)
+      throw Object.assign(
+        new Error("WebCodecsExporter.finalize：上一次 finalize 仍在执行"),
+        { name: "SpecViolation" },
+      );
     this.throwIfFailed();
-    if (!this.videoEncoder)
+    if (this.count === 0)
       throw new Error(
         "WebCodecsExporter：无已编码帧（finalize 前需 writeFrame）",
       );
@@ -268,39 +278,47 @@ export class WebCodecsExporter implements Exporter {
       throw new Error(
         "WebCodecsExporter：缺少 AVC 参数集（编码器未输出 decoderConfig）",
       );
-    await this.videoEncoder.flush();
-    this.throwIfFailed();
-    this.videoEncoder.close();
-    this.videoEncoder = null;
-
-    if (this.audioEncoder) await this.audioEncoder.flush();
-    this.throwIfFailed();
-    if (this.audioEncoder) this.audioEncoder.close();
-    this.audioEncoder = null;
-
-    /** 音频轨规格；没有写过音频则为 `undefined`（产物只有视频轨） */
-    const audio = this.audioLayout
-      ? this.audioTrackSpec(
-          this.audioLayout.sampleRate,
-          this.audioLayout.channels,
-        )
-      : undefined;
-    this.finalized = true;
-    /** 完整 mp4 字节（ftyp + moov + mdat 一次拼好） */
-    const output = this.muxer.finalize(
-      {
-        width: this.opts.width,
-        height: this.opts.height,
-        avcC: makeAvcC(this.sps, this.pps),
-      },
-      audio,
-    );
-    return {
-      output,
-      frames: this.count,
-      durationMs: this.durationMs,
-      format: "mp4",
-    };
+    this.finalizing = true;
+    try {
+      // 首次收尾才需要 flush 并关闭编码器；封装失败后的重试它们已经是 null
+      if (this.videoEncoder) {
+        await this.videoEncoder.flush();
+        this.throwIfFailed();
+        this.videoEncoder.close();
+        this.videoEncoder = null;
+      }
+      if (this.audioEncoder) {
+        await this.audioEncoder.flush();
+        this.throwIfFailed();
+        this.audioEncoder.close();
+        this.audioEncoder = null;
+      }
+      /** 音频轨规格；没有写过音频则为 `undefined`（产物只有视频轨） */
+      const audio = this.audioLayout
+        ? this.audioTrackSpec(
+            this.audioLayout.sampleRate,
+            this.audioLayout.channels,
+          )
+        : undefined;
+      /** 完整 mp4 字节（ftyp + moov + mdat 一次拼好） */
+      const output = this.muxer.finalize(
+        {
+          width: this.opts.width,
+          height: this.opts.height,
+          avcC: makeAvcC(this.sps, this.pps),
+        },
+        audio,
+      );
+      this.finalized = true;
+      return {
+        output,
+        frames: this.count,
+        durationMs: this.durationMs,
+        format: "mp4",
+      };
+    } finally {
+      this.finalizing = false;
+    }
   }
 
   /**

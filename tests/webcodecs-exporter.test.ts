@@ -59,17 +59,44 @@ function installWebCodecs() {
     }
   }
 
+  /** 音频编码器替身：只要不抛错，布局与样本写入路径就能跑通 */
+  class FakeAudioEncoder {
+    /** 出队回调；适配器持有它来等待队列变浅 */
+    ondequeue: (() => void) | null = null;
+    /** 编码队列深度（测试保持 0，不触发背压） */
+    encodeQueueSize = 0;
+
+    constructor(..._args: unknown[]) {}
+
+    configure(): void {}
+    encode(): void {}
+    async flush(): Promise<void> {}
+    close(): void {}
+  }
+
+  /** AudioData 替身：只记录构造参数并允许 close */
+  class FakeAudioData {
+    constructor(readonly init: Record<string, unknown>) {}
+    close(): void {}
+  }
+
   const scope = globalThis as unknown as Record<string, unknown>;
   const previousFrame = scope["VideoFrame"];
   const previousEncoder = scope["VideoEncoder"];
+  const previousAudioEncoder = scope["AudioEncoder"];
+  const previousAudioData = scope["AudioData"];
   scope["VideoFrame"] = FakeFrame;
   scope["VideoEncoder"] = FakeEncoder;
+  scope["AudioEncoder"] = FakeAudioEncoder;
+  scope["AudioData"] = FakeAudioData;
   return {
     frames,
     encoders,
     restore: (): void => {
       scope["VideoFrame"] = previousFrame;
       scope["VideoEncoder"] = previousEncoder;
+      scope["AudioEncoder"] = previousAudioEncoder;
+      scope["AudioData"] = previousAudioData;
     },
   };
 }
@@ -157,5 +184,38 @@ describe("WebCodecs 导出：编码器异步报错", () => {
     const pending = exporter.writeFrame(bitmap(2, 2), 1);
     encoder.emitError("queue stuck");
     await expect(pending).rejects.toThrow(/VideoEncoder 错误：queue stuck/);
+  });
+});
+
+describe("WebCodecs 导出：音频布局", () => {
+  it("样本数不是声道整数倍的坏块不占布局：之后单声道块正常写入", async () => {
+    webcodecs();
+    const exporter = new WebCodecsExporter({ width: 2, height: 2, fps: 30 });
+    await expect(
+      exporter.writeAudio(new Float32Array(3), 48_000, 2),
+    ).rejects.toMatchObject({ name: "SpecViolation" });
+    // 坏块若先定下立体声布局，这里会因布局不符而失败
+    await expect(
+      exporter.writeAudio(new Float32Array(8), 48_000, 1),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("WebCodecs 导出：收尾失败可重试", () => {
+  it("无帧时 finalize 失败不影响后续写入", async () => {
+    webcodecs();
+    const exporter = new WebCodecsExporter({ width: 2, height: 2, fps: 30 });
+    await expect(exporter.finalize()).rejects.toThrow(/无已编码帧/);
+    await expect(exporter.writeFrame(bitmap(2, 2), 0)).resolves.toBeUndefined();
+  });
+
+  it("收尾失败后同一实例仍可再次收尾与写入", async () => {
+    webcodecs();
+    const exporter = new WebCodecsExporter({ width: 2, height: 2, fps: 30 });
+    await exporter.writeFrame(bitmap(2, 2), 0);
+    // 假编码器不吐 decoderConfig，收尾卡在参数集检查；关键是失败不把实例锁死
+    await expect(exporter.finalize()).rejects.toThrow(/AVC/);
+    await expect(exporter.finalize()).rejects.toThrow(/AVC/);
+    await expect(exporter.writeFrame(bitmap(2, 2), 1)).resolves.toBeUndefined();
   });
 });
