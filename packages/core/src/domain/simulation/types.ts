@@ -47,8 +47,6 @@ export type SimNode =
       fn: StepFn;
       /** 相对登记位置的偏移（毫秒，可为负，缺省 0）；越窗由校验报 window_overflow */
       at?: Ms;
-      /** 相对登记位置的后置偏移（毫秒）；编译期只消费 at，该字段原样保留在节点上 */
-      after?: Ms;
       /** 窗口结束后是否沿用上一帧状态（参数冻结糖，缺省 false） */
       hold?: boolean;
       /** 本单元采样密度（帧/秒）；缺省继承 spawn 链的链级帧率或引擎基础帧率 */
@@ -204,8 +202,6 @@ export interface SceneInternal<P = unknown> {
   readonly setup?: (env: SetupEnv) => Promise<void> | void;
   /** 链上下一个片段（cutTo 写入；undefined = 链尾） */
   next?: SceneInternal<unknown>;
-  /** 保留标记位：当前实现不写入也不读取（过场信息由编译产物承载） */
-  nextIsTransition?: boolean;
 }
 
 /**
@@ -221,8 +217,6 @@ export interface SceneEntry {
   readonly setup?: (env: SetupEnv) => Promise<void> | void;
   /** 链上下一个片段（undefined = 链尾） */
   next?: SceneInternal<unknown>;
-  /** 保留标记位：当前实现不写入也不读取 */
-  nextIsTransition?: boolean;
 }
 
 /** 编译产物：窗口内绝对化的一帧活动单元（step 或一次 loop 迭代） */

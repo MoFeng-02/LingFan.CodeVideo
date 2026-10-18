@@ -34,12 +34,10 @@ export interface AudioEnv {
  */
 export type StepFn = (ctx: StepContext) => FrameState | void;
 
-/** step 选项：at/after/hold + fps（本单元采样密度；缺省继承） */
+/** step 选项：at/hold + fps（本单元采样密度；缺省继承） */
 export interface StepOptions {
   /** 本段起点（时间线毫秒）；缺省 = 当前 cursor */
   at?: Ms;
-  /** 相对当前 cursor 的额外推进（毫秒）；编译器目前只消费 `at`，此字段原样保留 */
-  after?: Ms;
   /** 结束后保留最后一帧到本段收窗；缺省 false */
   hold?: boolean;
   /** 单元声明帧率：帧池贡献 = 窗口时长 × fps（缺省 = 继承链/基础帧率） */
