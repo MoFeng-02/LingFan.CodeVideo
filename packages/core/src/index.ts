@@ -32,6 +32,7 @@ export {
   frameCount,
 } from "./domain/time-math/time-math";
 export { beatGrid, msPerBeat } from "./domain/time-math/beats";
+export { coverProgress } from "./domain/time-math/cover";
 export { poolOf, loopPool } from "./domain/simulation/types";
 /** 音频组合子：能力即上下文的「写法糖」（构造期强类型校验） */
 export {
