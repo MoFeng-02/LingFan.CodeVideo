@@ -248,9 +248,9 @@ playBtn.addEventListener("click", () => {
 async function play(): Promise<void> {
   if (busy) return;
   busy = true;
-  playBtn.disabled = true;
+  // 播放中播放键保持可点：暂停/继续由上面的 busy 分支接管（禁用会让该分支永远收不到点击）
   exportBtn.disabled = true;
-  playBtn.textContent = "渲染中…";
+  playBtn.textContent = "暂停";
   paused = false;
   sink.reset();
   const { ctx, out } = ensureAudio();
@@ -280,13 +280,13 @@ async function play(): Promise<void> {
     busy = false;
     playBtn.disabled = false;
     exportBtn.disabled = false;
-    playBtn.textContent = "▶ 重播";
+    playBtn.textContent = "重播";
   }
 }
 
 hud.textContent = "点「播放」开始（音频需用户手势解锁）";
 playBtn.disabled = false;
-playBtn.textContent = "▶ 播放";
+playBtn.textContent = "播放";
 
 // ---------- 导出（mp4 = H.264 视频 + AAC 音轨） ----------
 
