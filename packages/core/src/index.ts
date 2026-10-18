@@ -48,14 +48,15 @@ export {
 } from "./domain/audio";
 export type { SceneInternal, SimNode } from "./domain/simulation/types";
 
-/** 预览/导出通用装配：建引擎 + 装 CPU 位图来源（GPU painter 由独立适配器承载） */
+/** 预览/导出通用装配：建引擎 + 装 CPU 位图来源（框架自绘由注入 painter 承载） */
 function assemble(opts: RenderOptions): {
   engine: TimelineEngine;
   canvas: HTMLCanvasElement | OffscreenCanvas;
 } {
+  // 有 painter 时引擎只需要一个占位绘制目标：框架自绘路径不该因为「没有 DOM 画布」而失败。
   const canvas: HTMLCanvasElement | OffscreenCanvas =
     opts.canvas ??
-    (opts.headless
+    (opts.painter || opts.headless
       ? makeHeadlessCanvas(opts.width, opts.height)
       : document.createElement("canvas"));
   const engine = new TimelineEngine({

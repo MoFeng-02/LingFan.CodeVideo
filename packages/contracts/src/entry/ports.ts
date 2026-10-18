@@ -7,8 +7,12 @@ import type { AudioClock, AudioOutput } from "../audio";
 import type { FrameSource } from "../capture";
 import type { InputEvent } from "../input";
 
-/** 渲染后端 */
-export type Backend = "webgpu" | "webgl" | "2d";
+/**
+ * 渲染后端标识：适配器自解释的开放标识，不参与引擎行为。
+ * 引擎只认 `painter` 交出的像素，不认它是谁画的——WebGPU / WebGL / three.js / 原生 SDK 画布
+ * 都是适配器自己的事，新增后端不需要改契约。这里列出的三个只是常见取值的补全提示。
+ */
+export type Backend = "2d" | "webgpu" | "webgl" | (string & {});
 
 /**
  * RenderOptions：组合根的引擎形态。
@@ -23,6 +27,10 @@ export interface RenderOptions {
   width: number;
   height: number;
   backend?: Backend;
+  /**
+   * 默认 2D 适配器的绘制目标。框架集成可以不给：只注入 `painter` 即可，
+   * 引擎不会因此去找 DOM 画布（无 canvas 也能出帧）。
+   */
   canvas?: HTMLCanvasElement | OffscreenCanvas;
   exporter: Exporter;
   /** 资产来源（setup 阶段 assets.load 后端；缺省 = fail-fast） */
@@ -52,7 +60,7 @@ export interface RenderOptions {
   /**
    * 整场随机种子（缺省 DEFAULT_PROGRAM_SEED）：只决定 `ctx.random` 的抽取序列。
    * 同一剧本 + 同一 seed + 同一调用序列 = 同一帧序列；换 seed 就是换一次抽取。
-   * 随机是数据：不写进代码的隐式熵，才能让「视频 = 一次运行的录像」成立。
+   * 随机是数据：不写进代码的隐式熵，同一份剧本才有一段可复算的推演。
    */
   seed?: number;
   onProgress?(doneFrames: number, totalFrames: number): void;

@@ -10,7 +10,7 @@ export interface FrameBitmap {
 /**
  * 帧交出点：每帧像素从这里离开渲染端，渲染之后的一切只认此接口。
  * 变帧率下 index→timestamp 不再是均匀映射，引擎直出真时间戳（采样网格点）。
- * 测试桩与录制器均实现本契约。
+ * 测试桩与出片后端均实现本契约。
  */
 export interface FrameSink {
   writeFrame(

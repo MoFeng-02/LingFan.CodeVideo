@@ -12,7 +12,7 @@ export interface PointerState {
 
 export type PointerButton = "primary" | "secondary" | "auxiliary";
 
-/** 指针事件：鼠标 / 触摸 / 笔同一套（差异由录制方归一） */
+/** 指针事件：鼠标 / 触摸 / 笔同一套（设备差异在事件表里归一） */
 export interface PointerInputEvent {
   readonly atMs: Ms;
   readonly kind: "pointer";
