@@ -1,10 +1,12 @@
 import type {
   FrameBitmap,
+  FrameHost,
+  FrameHostInfo,
   FrameIndex,
   FrameSink,
-  FrameSource,
   FrameState,
   Ms,
+  Painter,
 } from "@lingfan-video/contracts";
 import { StateAggregator } from "../../domain/simulation";
 import type { CompiledUnit, SceneEntry } from "../../domain/simulation/types";
@@ -136,13 +138,7 @@ export function buildSampleGrid(state: TimelineState): Ms[] {
 export class TimelineEngine {
   private readonly state: TimelineState;
   private readonly aggregator = new StateAggregator();
-  private painter:
-    | ((
-        f: FrameIndex,
-        t: Ms,
-        state: FrameState,
-      ) => FrameBitmap | Promise<FrameBitmap>)
-    | null = null;
+  private painter: Painter | null = null;
 
   constructor(opts: TimelineState["opts"]) {
     this.state = makeState(opts);
@@ -154,11 +150,27 @@ export class TimelineEngine {
   }
 
   /**
-   * 注入可等待的帧来源：宿主没有同步抓帧能力时用（DOM/HTML/React/Vue 栅格化、
-   * GPU 读回、跨进程宿主）。引擎在每帧边界等它完成，再交帧。
+   * 注入帧来源：纯函数来源（同步或返回 Promise）或带生命周期的宿主。
+   * 宿主在每次推演开始时收到 `begin`（重播即重置），结束时收到 `close`。
    */
-  setFrameSource(source: FrameSource): void {
-    this.painter = (f, t) => source(f, t);
+  setFrameSource(source: Painter): void {
+    this.painter = source;
+  }
+
+  private host(): FrameHost | null {
+    const p = this.painter;
+    return p !== null && typeof p !== "function" ? p : null;
+  }
+
+  private hostInfo(): FrameHostInfo {
+    const opts = this.state.opts;
+    return {
+      fps: opts.fps,
+      width: opts.width,
+      height: opts.height,
+      durationMs: this.state.timelineEnd,
+      headless: opts.headless ?? false,
+    };
   }
 
   /** 正片渲染：沿采样网格逐点求值并交帧；运行期 spawn 新增链 → 重建剩余网格（动态流式采样） */
@@ -174,6 +186,41 @@ export class TimelineEngine {
       voices: this.state.audioVoices,
       graph: buildAudioGraph(this.state, "timeline"),
     });
+    // 有状态宿主：每次推演重新建场（重播不得沿用上一次的物理/时钟状态）。
+    // begin 失败即整个推演失败，不交任何帧，也不调 close（宿主没开过）。
+    const host = this.host();
+    if (host) await host.begin(this.hostInfo());
+    let summary: RunSummary | null = null;
+    let failure: unknown = null;
+    try {
+      summary = await this.renderGrid(sink, onProgress);
+    } catch (err) {
+      failure = err;
+    } finally {
+      if (host?.close) {
+        try {
+          await host.close();
+        } catch (closeErr) {
+          // close 失败不得掩盖推演失败：两个错误都留给调用方
+          failure =
+            failure === null
+              ? closeErr
+              : new AggregateError(
+                  [failure, closeErr],
+                  "帧宿主 close 失败，且本次推演已经失败",
+                );
+        }
+      }
+    }
+    if (failure !== null) throw failure;
+    return summary!;
+  }
+
+  /** 逐点求值 + 交帧主循环（打帧源生命周期与错误收口都由 run 负责） */
+  private async renderGrid(
+    sink: FrameSink,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<RunSummary> {
     let grid = buildSampleGrid(this.state);
     let idx = 0;
     let chainCount = this.state.spawnChains.length;
@@ -282,15 +329,18 @@ export class TimelineEngine {
   private async painterPaint(
     f: FrameIndex,
     t: Ms,
-    state: FrameState,
+    _state: FrameState,
   ): Promise<FrameBitmap> {
-    if (!this.painter)
+    const painter = this.painter;
+    if (!painter)
       throw makeRenderError(
         "spec_violation",
         "engine",
         t,
         "未装配 Painter（infra/capture）",
       );
-    return await this.painter(f, t, state);
+    // 纯函数来源没有生命周期：逐帧直接取；宿主则走 begin/frame/close
+    if (typeof painter === "function") return await painter(f, t);
+    return await painter.frame(f, t);
   }
 }

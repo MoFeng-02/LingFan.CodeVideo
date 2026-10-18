@@ -4,7 +4,7 @@ import type { ExportResult, Exporter } from "../export";
 import type { FrameState, ValidationError } from "../feedback";
 import type { AssetSource } from "../asset";
 import type { AudioClock, AudioOutput } from "../audio";
-import type { FrameSource } from "../capture";
+import type { Painter } from "../capture";
 import type { InputEvent } from "../input";
 
 /**
@@ -42,8 +42,11 @@ export interface RenderOptions {
   /**
    * 帧像素来源（缺省 = 从绘制目标 canvas 的 2D 上下文回读；
    * GPU/离屏/自定义合成路径注入自己的实现）
+   *
+   * 可以是纯函数来源，也可以是带生命周期的 `FrameHost`（宿主自己持有跨帧状态时用：
+   * 物理积分、粒子池、第三方引擎内部时钟）。引擎每次推演都会先 `begin`，重播即重置。
    */
-  painter?: FrameSource;
+  painter?: Painter;
   /**
    * 无可用帧像素来源时的策略（缺省 "required"）：
    * - "required"：既无 painter、绘制目标也没有 2D 上下文 → 首帧求值 `spec_violation`（不静默交空白帧）

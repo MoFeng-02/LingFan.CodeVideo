@@ -33,3 +33,32 @@ export type FrameSource = (
   frame: FrameIndex,
   timestampMs: Ms,
 ) => FrameBitmap | Promise<FrameBitmap>;
+
+/** 一次推演开始时的固定参数：宿主要用它们建舞台、定相机与时间线长度 */
+export interface FrameHostInfo {
+  readonly fps: number;
+  readonly width: number;
+  readonly height: number;
+  readonly durationMs: Ms;
+  readonly headless: boolean;
+}
+
+/**
+ * 有生命周期的帧宿主：`begin` 建场（每次推演都会调用一次，重播即重置）、
+ * `frame` 取当帧位图、`close` 收场（可不实现）。
+ *
+ * 什么时候需要它：宿主自己持有跨帧状态——物理积分、粒子池、第三方引擎的内部时钟、
+ * 需要按 durationMs 预建轨道或缓存贴图的渲染器。纯函数来源（`FrameSource`）没有
+ * 这些状态，用函数即可。约定：
+ * - `begin` 之后按时间线顺序逐帧调用 `frame`，引擎逐帧等待，**不得并发重入**；
+ * - 状态只能在 `begin` 初始化，不得跨 `begin` 沿用——重播与重渲染都从零开始；
+ * - `frame` 返回的位图由引擎复制/编码，宿主可以复用同一块缓冲。
+ */
+export interface FrameHost {
+  begin(info: FrameHostInfo): void | Promise<void>;
+  frame(frame: FrameIndex, timestampMs: Ms): FrameBitmap | Promise<FrameBitmap>;
+  close?(): void | Promise<void>;
+}
+
+/** 帧像素来源的两种形态：纯函数来源，或带生命周期的宿主 */
+export type Painter = FrameSource | FrameHost;
