@@ -7,7 +7,16 @@
 import type { Ms } from "@lingfan-video/contracts";
 import type { FrameLayer, LayerSpec } from "./types";
 
-/** 层的可见区间判定：左闭右开，缺省整段可见 */
+/**
+ * 层的可见区间判定：左闭右开，缺省整段可见。
+ *
+ * 区间端点都是故事时间（毫秒）；`from` 含、`to` 不含，因此相接的两层
+ * 恰好在交界帧完成交接、不会同时可见。
+ *
+ * @param spec 层声明（只看 `from` / `to`）
+ * @param timestampMs 本帧时间戳（毫秒）
+ * @returns 该帧是否可见
+ */
 export function isLayerActive(spec: LayerSpec, timestampMs: Ms): boolean {
   if (spec.from !== undefined && timestampMs < spec.from) return false;
   if (spec.to !== undefined && timestampMs >= spec.to) return false;
@@ -17,11 +26,18 @@ export function isLayerActive(spec: LayerSpec, timestampMs: Ms): boolean {
 /**
  * 本帧的叠放次序：z 升序（同 z 保持声明顺序）。
  * 排序稳定是刻意的——同一剧本必须得到同一叠放顺序，否则输出不可复现。
+ *
+ * 返回的是新数组，入参不变；不在可见区间内的层被过滤掉。
+ *
+ * @param layers 全部层（声明顺序）
+ * @param timestampMs 本帧时间戳（毫秒）
+ * @returns 本帧要叠的层，自下而上
  */
 export function planComposite(
   layers: readonly FrameLayer[],
   timestampMs: Ms,
 ): readonly FrameLayer[] {
+  /** 本帧可见的层（保持声明顺序） */
   const active = layers.filter((layer) =>
     isLayerActive(layer.spec, timestampMs),
   );

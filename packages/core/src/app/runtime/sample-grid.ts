@@ -11,6 +11,9 @@ import type { ChainSpan, EvalDeps, TimelineState } from "./engine-types";
  * - 单元 fps 网格：第 n 点 = windowStart + n×(1000/fps)，取整微秒去重
  * - hold 单元窗外冻结不加点（末点由窗口内网格覆盖）
  * - 空窗（无任何单元）不产帧——语义层单位是毫秒，fps 只是采样密度
+ *
+ * @param state 当前时间线状态（链、段、单元窗口都已确定）
+ * @returns 升序、无重复的采样时刻（毫秒）；空数组 = 整条时间线没有任何产帧单元
  */
 export function buildSampleGrid(state: TimelineState): Ms[] {
   const seen = new Set<number>(); // 微秒整数
@@ -82,7 +85,13 @@ export function buildSampleGrid(state: TimelineState): Ms[] {
   return points.map((us) => us / 1000);
 }
 
-/** 网格里严格晚于 at 的第一个采样点（异步 setup 的链从这里整点开始） */
+/**
+ * 网格里严格晚于 at 的第一个采样点（异步 setup 的链从这里整点开始）。
+ *
+ * @param grid 升序采样网格（毫秒）
+ * @param at 参考时刻（毫秒；网格点等于它不算「之后」）
+ * @returns 严格大于 `at` 的第一个采样时刻；没有则 `undefined`（该链来不及出现）
+ */
 export function firstAfter(grid: readonly Ms[], at: Ms): Ms | undefined {
   let lo = 0;
   let hi = grid.length;

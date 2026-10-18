@@ -2,6 +2,10 @@
  * @lingfan-video/core 组合根：唯一全知模块。
  * 分层：contracts（端口）← domain（纯域）← app（引擎）← 本文件（装配 + 便利 API）。
  * 实现契约：RenderFn / ValidateFn / ComputeFns。
+ *
+ * 对外只从这里 import：`render` / `compute` / `validateScene` 是三个契约实现，
+ * `compileAudioProgram` 是预览预热用的旁路入口，其余为重导出与装配参数类型。
+ * 平台相关能力（画布、编码器、音频设备、资产解码）都由调用方注入，本层不认平台 API。
  */
 import type {
   AudioGraph,
@@ -22,20 +26,30 @@ import { validate } from "./domain/validation";
 import type { SceneInternal } from "./domain/simulation/types";
 import { TimelineEngine, type EngineOptions } from "./app/runtime";
 
+/** 结构化渲染错误工厂（契约错误类型 RenderError 的唯一构造入口） */
 export { makeRenderError } from "./app/runtime/error";
+/** 时间线引擎：登记 → 编译 → 逐帧求值 → 交帧；需要自己驱动多趟推演时直接用 */
 export { TimelineEngine } from "./app/runtime/engine";
+/** 声明式输入轨道工厂（事件表校验 + 逐帧快照；预览与导出共用同一份数据） */
 export { createInputTrack } from "./app/runtime/input";
+/** 确定性随机流工厂（同种子同步数必同序列；子流用 fork(label) 派生） */
 export { createRandomStream } from "./domain/random/stream";
+/** 引擎装配参数与推演摘要（注入面与结果面） */
 export type { EngineOptions, RunSummary } from "./app/runtime/engine-types";
+/** 剧本静态校验：返回校验错误表，不抛异常 */
 export { validate } from "./domain/validation";
+/** 帧号 ↔ 毫秒（逐帧乘法，禁累加） */
 export {
   timestampAt,
   msToFrames,
   framesToMs,
   frameCount,
 } from "./domain/time-math/time-math";
+/** 节拍网格与每拍毫秒数（音乐时长换算） */
 export { beatGrid, msPerBeat } from "./domain/time-math/beats";
+/** 过场遮盖进度（0..1 纯函数）：绝对时刻 → 遮盖量；出幕用返回值、入幕用 1 − 返回值 */
 export { coverProgress } from "./domain/time-math/cover";
+/** 池账本：主链/loop 占用的总毫秒池（编译期时间语义的账本） */
 export { poolOf, loopPool } from "./domain/simulation/types";
 /** 音频组合子：能力即上下文的「写法糖」（构造期强类型校验） */
 export {
@@ -50,6 +64,7 @@ export {
   rate,
   warp,
 } from "./domain/audio";
+/** 场景内部形态与节点联合：自己写编译/调度扩展时才需要直接面对它们 */
 export type { SceneInternal, SimNode } from "./domain/simulation/types";
 
 /** 预览/导出通用装配：建引擎 + 装 CPU 位图来源（框架自绘由注入 painter 承载） */
@@ -137,7 +152,17 @@ function makeMissingFrameSource(): Error {
   return err;
 }
 
-/** render（RenderFn 契约实现）：帧由注入的 sink 逐帧接收；音轨在封装收尾前写入 */
+/**
+ * render（RenderFn 契约实现）：帧由注入的 sink 逐帧接收；音轨在封装收尾前写入。
+ *
+ * 顺序即封装顺序：逐帧交帧 → 写音轨（帧之后、finalize 之前）→ 导出器 finalize → 取产物。
+ * 预览与导出共用这一次推演：实时发声走 `audioOutput`，离线混音走 `audio`（AudioClock）。
+ *
+ * @param scene 链头场景（剧本入口）
+ * @param options 渲染选项：帧率/尺寸、导出器（必填）、音频时钟、帧来源、输入、种子、进度回调
+ * @returns 帧数、总时长与导出器产物
+ * @throws SpecViolation 未给导出器、没有可用的帧像素来源、有声音却没有音轨出口
+ */
 export const render: import("@lingfan-video/contracts").RenderFn = async (
   scene,
   options,
@@ -186,6 +211,10 @@ export type AudioProgramOptions = Pick<
  * 用途：预览端在页面加载时配合 `WebAudioOutput.warm` 把整条配乐先合成好，
  * 点播放时就不必逐个声部现算 PCM。与 render 走同一条登记/编译路径，
  * 因此参数一致时两者得到的声音逐项相同。
+ *
+ * @param scene 链头场景
+ * @param options 与 render 同义的帧率/尺寸/资产/种子（不含导出器与帧来源）
+ * @returns 时间线音频程序（时长 + 声音记录 + 音频图）
  */
 export async function compileAudioProgram(
   scene: Scene<unknown>,
@@ -302,16 +331,45 @@ function exporterAdapter(exporter: Exporter): FrameSink & {
   };
 }
 
-/** validate（ValidateFn 契约实现） */
+/**
+ * validate（ValidateFn 契约实现）。
+ *
+ * 干跑登记体检查剧本结构（单元窗口是否越出段窗口、循环/嵌入链/音频声明参数、
+ * spawn 键重复、链上成环或重复段），返回错误表而不是抛异常。
+ * 干跑时画布为空：登记体必须只登记、不依赖真实画布。
+ *
+ * @param scene 待校验的链头场景（按 next 顺链检查）
+ * @returns 校验错误表；空数组表示通过
+ */
 export const validateScene: ValidateFn = (scene) =>
   validate(scene as SceneInternal<unknown>, 60);
 
-/** computeAt/computeRange（ComputeFns 契约实现）：同一次登记复用（登记不重跑） */
+/**
+ * computeAt/computeRange（ComputeFns 契约实现）。
+ *
+ * 每次调用独立建引擎、独立登记一遍；单次调用内沿采样网格逐点求值，
+ * 登记只发生一次（不会逐点重登记）。
+ */
 export const compute: ComputeFns = {
+  /**
+   * 取 ≤t 的最近采样点状态。
+   *
+   * @param scene 链头场景
+   * @param t 查询时刻（毫秒）
+   * @returns 状态表；越过时间线尾或早于首个网格点时 `undefined`
+   */
   computeAt: async (scene, t) => {
     const engine = new TimelineEngine(engineOptsForCompute());
     return engine.stateAt(scene as SceneInternal<unknown>, t);
   },
+  /**
+   * 取 [from,to) 内全部采样点的状态表。
+   *
+   * @param scene 链头场景
+   * @param from 区间起点（毫秒，含）
+   * @param to 区间终点（毫秒，不含）
+   * @returns 按时间升序的状态表数组
+   */
   computeRange: async (scene, from, to) => {
     const engine = new TimelineEngine(engineOptsForCompute());
     return engine.collect(scene as SceneInternal<unknown>, from, to);
@@ -341,7 +399,9 @@ function makeDefaultAssets(): import("@lingfan-video/contracts").AssetSource {
   };
 }
 
-/** 便利重导出：start（StartFn 三重载）从 dsl 出 */
+/** 便利重导出：start（StartFn 三重载）从 dsl 出；三种形态的差别见 StartFn 契约 */
 export { startScene as start } from "./domain/simulation/dsl";
+/** 剧本入口的启动规格（窗口 + setup + run） */
 export type { StartSpec } from "./domain/simulation/dsl";
+/** 建场景（段窗口长度 + 登记体 + 可选 setup）；id 由调用序号自动生成 */
 export { createScene } from "./domain/simulation/dsl";

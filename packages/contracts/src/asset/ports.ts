@@ -8,5 +8,10 @@ import type { AssetLike } from "./entities";
  * 实现方可以是 fetch、文件系统、打包器内联表、第三方引擎的 loader。
  */
 export interface AssetSource {
+  /**
+   * 加载一个资产。
+   * @param url 资产来源标识（直接传给实现方，不做归一化）
+   * @returns 自解释资产；载荷形态由实现方决定
+   */
   load(url: string): Promise<AssetLike>;
 }

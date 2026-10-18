@@ -31,6 +31,7 @@ export interface LayerEnv {
    *
    * 登记顺序不影响叠放（叠放由 `z` 决定，同 `z` 再看声明顺序），
    * 所以并行分支各自声明自己那一层也不会打架。
+   * @param declaration 层 id、叠放与可见区间
    */
   layer(declaration: LayerDeclaration): void;
 }

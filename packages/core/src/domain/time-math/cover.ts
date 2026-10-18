@@ -11,7 +11,17 @@
 import type { Ms } from "@lingfan-video/contracts";
 import { violation } from "../spec-violation";
 
-/** `fromMs` 之前为 0，`fromMs + durationMs` 之后为 1，中间线性 */
+/**
+ * 过场遮盖进度：`fromMs` 之前为 0，`fromMs + durationMs` 之后为 1，中间线性。
+ *
+ * 出幕用返回值作 alpha、入幕用 `1 - alpha`，切点两侧读同一个绝对时刻才对齐。
+ *
+ * @param atMs 当前时刻（毫秒，须有限）
+ * @param fromMs 遮盖起点（毫秒，须有限）
+ * @param durationMs 遮盖时长（毫秒，须有限；<= 0 时退化为阶跃）
+ * @returns 0..1 的遮盖量
+ * @throws spec_violation 任一参数不是有限数时
+ */
 export function coverProgress(atMs: Ms, fromMs: Ms, durationMs: Ms): number {
   if (
     !Number.isFinite(atMs) ||

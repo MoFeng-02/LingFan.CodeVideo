@@ -1,8 +1,24 @@
+/**
+ * 程序化音源的形式判据。
+ *
+ * 登记期抛错与静态校验共用这一处：结构对象可被字面量直接构造，
+ * 因此不能只靠组合子构造时的校验。一次报全全部问题。
+ */
 import type { SynthSpec } from "@lingfan-video/contracts";
 
 /**
  * 程序化音源的形式问题（一次报全，便于静态校验一次性提示）。
  * 登记期抛错与静态校验共用这一处判据：结构对象可被字面量直接构造，不能只靠构造期校验。
+ */
+/**
+ * 列出音源规格的全部形式问题（空数组 = 合法）。
+ *
+ * 检查项：`durationMs` 为 > 0 的有限数；非噪声波形时 `freq` > 0；`detune` 有限；
+ * `gain` ≥ 0；`pan` 在 [-1, 1]；`seed` 有限（按 32 位无符号取用）；
+ * 包络的 attack/decay/release ≥ 0 且 `sustain` 在 [0, 1]。
+ *
+ * @param spec 音源规格（波形/时长/频率/包络/总线）
+ * @returns 问题文案列表
  */
 export function synthErrors(spec: SynthSpec): string[] {
   const errors: string[] = [];
@@ -41,7 +57,12 @@ export function synthErrors(spec: SynthSpec): string[] {
   return errors;
 }
 
-/** 登记期校验：首条问题即抛（错误名 SpecViolation，与契约违规同一出口） */
+/**
+ * 登记期校验：首条问题即抛，错误名为 SpecViolation（与契约违规同一出口）。
+ *
+ * @param spec 音源规格
+ * @throws SpecViolation 任一形式问题存在时（消息为第一条问题）
+ */
 export function assertSynth(spec: SynthSpec): void {
   const first = synthErrors(spec)[0];
   if (first === undefined) return;

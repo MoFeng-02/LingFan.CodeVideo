@@ -1,3 +1,13 @@
+/**
+ * 程序随机源：事件流式的可复现随机（同种子同步数必同序列）。
+ *
+ * 种子决定序列，标签派生子流：`fork(label)` 用「种子 + 标签」折叠出独立子流，
+ * 因此给不同单元/单元内不同用途开子流时，互不扰动。随机只在逐帧求值里消费，
+ * 求值顺序确定 → 序列确定，这是「同输入同输出」能成立的前提。
+ *
+ * 归一化（把种子收到 32 位无符号整数）在组合根完成，本文件只接受已归一的种子；
+ * 全仓只有这一处随机实现，编辑器与出片端共用。
+ */
 import type { RandomStream } from "@lingfan-video/contracts";
 import { violation } from "../spec-violation";
 
@@ -56,14 +66,30 @@ class XorShift32Stream implements RandomStream {
     return x;
   }
 
+  /** 下一个 [0, 1) 均匀分布样本 */
   next(): number {
     return this.step() / UINT32;
   }
 
+  /**
+   * 区间浮点样本：`[min, max)`（不校验顺序，调用方保证 `min < max`）。
+   *
+   * @param min 区间下界（含）
+   * @param max 区间上界（不含）
+   * @returns 区间内的均匀样本
+   */
   float(min: number, max: number): number {
     return min + (max - min) * this.next();
   }
 
+  /**
+   * 区间整数样本：`[min, max)`（右端不含）。
+   *
+   * @param min 下界（含，须为整数）
+   * @param max 上界（不含，须为整数且大于 min）
+   * @returns 区间内的整数样本
+   * @throws spec_violation 两端不是整数或 max <= min 时
+   */
   int(min: number, max: number): number {
     if (!Number.isInteger(min) || !Number.isInteger(max) || max <= min)
       throw violation(
@@ -72,28 +98,58 @@ class XorShift32Stream implements RandomStream {
     return min + Math.floor(this.next() * (max - min));
   }
 
+  /**
+   * 按概率取真：样本 < 概率时为 true。
+   *
+   * @param probability 概率（0..1；0 恒假、1 恒真）
+   * @returns 伯努利试验结果
+   * @throws spec_violation 概率越界时
+   */
   chance(probability: number): boolean {
     if (!(probability >= 0 && probability <= 1))
       throw violation(`random.chance(${probability}) 要求 0..1`);
     return this.next() < probability;
   }
 
+  /**
+   * 等概率抽取一个元素。
+   *
+   * @param items 候选数组（须非空）
+   * @returns 被抽中的元素（原引用）
+   * @throws spec_violation 数组为空时
+   */
   pick<T>(items: readonly T[]): T {
     if (items.length === 0) throw violation("random.pick 需要非空数组");
     return items[Math.floor(this.next() * items.length)]!;
   }
 
+  /**
+   * 派生一条独立子流：同标签同子流，不同标签互不扰动。
+   *
+   * @param label 子流标签（同一父流下用于区分子流）
+   * @returns 以「父种子 + 标签」折叠出的新流
+   */
   fork(label: string): RandomStream {
     return new XorShift32Stream(foldSeed(this.base, label));
   }
 }
 
-/** 建一条程序随机子流（种子须是 0..2^32-1 的整数；归一化在组合根完成） */
+/**
+ * 建一条程序随机子流。
+ *
+ * @param seed 种子（0..2^32-1 的整数；归一化由调用方在组合根完成）
+ * @returns 可复现的随机流
+ */
 export function createRandomStream(seed: number): RandomStream {
   return new XorShift32Stream(seed);
 }
 
-/** 种子校验：返回人读的错误描述，合法返回 null（纯检查） */
+/**
+ * 种子校验：返回人读的错误描述，合法返回 null（纯检查、不抛错）。
+ *
+ * @param seed 待校验的种子（任意类型）
+ * @returns 问题描述；合法时为 null
+ */
 export function seedError(seed: unknown): string | null {
   if (typeof seed !== "number" || !Number.isInteger(seed))
     return `RenderOptions.seed 必须是 0..${UINT32 - 1} 的整数`;

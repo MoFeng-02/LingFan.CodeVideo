@@ -28,7 +28,11 @@ export interface WalkChainCursor {
   pendingOverlap: Ms;
 }
 
+/**
+ * 一次链编译的结果：要么走到链尾（只有游标），要么停在某个未完成的异步 setup 上。
+ */
 export interface WalkChainOutcome {
+  /** 编译游标（可保存后从同一位置继续） */
   cursor: WalkChainCursor;
   /** 遇到异步 setup：链暂停，等这一 Promise 在帧边界补完 */
   wait?: { head: SceneInternal<unknown>; promise: PromiseLike<unknown> };
@@ -37,6 +41,13 @@ export interface WalkChainOutcome {
 /**
  * 从游标继续编译一条链，直到链尾或第一个未完成的异步 setup。
  * setup 只跑一次（`setupDone` 记账）；中断时把「待继续的场景」交回调用方。
+ *
+ * @param state 引擎状态（setup 记账、总线图合并）
+ * @param chain 被编译的链（段窗口直接追加到 `chain.spans`）
+ * @param head 本次继续编译的链头场景（恢复时是那个 setup 未完成的场景）
+ * @param chainFps 链级继承帧率；缺省 = 引擎基础帧率
+ * @param start 起始游标（内容末点、prev 传参、成环检测集合、待接的重叠窗）
+ * @returns 走到链尾的游标，或停在异步 setup 上的游标 + 待完成的 Promise
  */
 export function walkChain(
   state: TimelineState,
@@ -94,6 +105,17 @@ export type NextSamplePoint = (atMs: Ms) => Ms | undefined;
 /**
  * 运行期 spawn 的入口：立刻登记链壳并编译到第一个异步 setup 为止。
  * 同步 setup 的链当场编译完，行为与以前一致（从 spawn 时刻开始）。
+ *
+ * 同 key 且时间窗重叠的活跃链已存在时直接返回它（续接，不新建）；否则登记链壳、
+ * 版本号自增，再编译。异步 setup 的链先返回未物化的壳，帧边界补完。
+ *
+ * @param state 引擎状态
+ * @param key 去重键（同 key 重叠 → 续接）
+ * @param head 链头场景
+ * @param start 链起点（全局毫秒）；异步 setup 的链会在物化时平移到下一个采样点
+ * @param duration 链长（毫秒）；`undefined` = 按内容实况回填，`Infinity` = forever
+ * @param chainFps 链级继承帧率；缺省 = 引擎基础帧率
+ * @returns 链（新建的或已存在的续接链）
  */
 export function spawnChain(
   state: TimelineState,
@@ -161,6 +183,13 @@ function describeError(err: unknown): string {
 /**
  * 帧边界物化：等已完成的 setup，把已编译前缀整体平移到下一个采样点，继续编译。
  * 在 `sink.writeFrame` 之后调用——这一帧已经交出去了，不影响帧序。
+ *
+ * 一轮处理当帧登记的全部待物化链；继续编译时又遇到异步 setup 的链重新入队，循环到清空。
+ * 没有后续采样点的链安静收掉（置 killed，不会半截出现）。
+ *
+ * @param state 引擎状态（读取并清空 `pendingSpawns`）
+ * @param nextPoint 取出「严格晚于某时刻的第一个采样点」；没有后续点位时返回 `undefined`
+ * @throws RenderError（kind = spec_violation）运行期 spawn 的 setup 失败
  */
 export async function flushPendingSpawns(
   state: TimelineState,

@@ -8,12 +8,23 @@
 import type { GainLike } from "@lingfan-video/contracts";
 import { violation } from "../spec-violation";
 
-/** 分贝 → 线性幅度：20·log10 的逆运算（-6 dB ≈ 0.501，+6 dB ≈ 1.995） */
+/**
+ * 分贝 → 线性幅度：20·log10 的逆运算（-6 dB ≈ 0.501，+6 dB ≈ 1.995）。
+ *
+ * @param db 分贝值（有限数，可负）
+ * @returns 线性幅度（正数）
+ */
 export function dbToLinear(db: number): number {
   return Math.pow(10, db / 20);
 }
 
-/** 记法校验（静态校验与登记期共用这一处判据）：返回问题文案，合法时为 null */
+/**
+ * 增益记法校验（静态校验与登记期共用这一处判据）。
+ *
+ * @param value 待校验值：线性幅度（≥0 的有限数）或 `{ db: 有限数 }`
+ * @param name 用于报错定位的前缀（如 `gain`、`automation (music) 第 0 点 gain`）
+ * @returns 问题文案；合法时为 null
+ */
 export function gainError(value: unknown, name: string): string | null {
   if (typeof value === "number") {
     return Number.isFinite(value) && value >= 0
@@ -29,7 +40,14 @@ export function gainError(value: unknown, name: string): string | null {
   return `${name}=${String(value)} 须为 ≥0 的有限数，或写 { db: number }`;
 }
 
-/** 把作者写的增益记法折算成线性幅度（name 只用于报错定位） */
+/**
+ * 把作者写的增益记法折算成线性幅度。
+ *
+ * @param value 增益记法：线性幅度或 `{ db }`
+ * @param name 只用于报错定位的字段名
+ * @returns 线性幅度（正数）
+ * @throws SpecViolation 记法非法时（消息即 gainError 的文案）
+ */
 export function toLinearGain(value: GainLike, name: string): number {
   const problem = gainError(value, name);
   if (problem !== null) throw violation(problem);

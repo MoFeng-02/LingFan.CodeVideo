@@ -21,15 +21,34 @@ import type { FrameLayer, LayerSpec } from "../types";
 
 /** three 渲染器只要能画、能交画布即可；换成 WebGPU 渲染器时同形 */
 export interface ThreeRendererLike {
+  /** 渲染器自带的画布：适配器把它的内容当成本层输出 */
   domElement: HTMLCanvasElement;
+  /**
+   * 设置渲染尺寸。
+   *
+   * @param width 宽（像素）
+   * @param height 高（像素）
+   * @param updateStyle 是否同时改 CSS 尺寸；离屏渲染传 `false`
+   */
   setSize(width: number, height: number, updateStyle?: boolean): void;
+  /**
+   * 渲染一帧到画布。
+   *
+   * @param scene 场景
+   * @param camera 相机
+   */
   render(scene: Scene, camera: Camera): void;
+  /** 释放渲染器持有的 GPU 资源（上下文、缓冲）；由层 `dispose` 调用 */
   dispose(): void;
 }
 
+/** 造一层 three 内容所需的参数 */
 export interface ThreeLayerOptions {
+  /** 层声明：id、叠放次序与可见区间（合成端只看这些） */
   readonly spec: LayerSpec;
+  /** 承载面宽（像素），同时作为画布初始宽度 */
   readonly width: number;
+  /** 承载面高（像素），同时作为画布初始高度 */
   readonly height: number;
   /** 造渲染器（例如 `three/webgpu` 的 WebGPURenderer）；缺省 WebGLRenderer */
   readonly createRenderer?: (canvas: HTMLCanvasElement) => ThreeRendererLike;
@@ -63,15 +82,27 @@ export interface ThreeLayerOptions {
 /**
  * three 内容层：自己一块画布，`render` 时把这一帧画进去。
  * 合成器只认它的画布，不认识 three——别的渲染包写同形的 `LayerSurface` 即可替换。
+ *
+ * 惰性初始化：画布在调用时就建好（尺寸固定），渲染器/场景/相机要等第一次
+ * `render` 才创建，因此没上屏的层不占 GPU 资源。默认 WebGL 渲染器开
+ * `preserveDrawingBuffer` 且带 alpha，保证这一层的画布能被合成器再读一次。
+ *
+ * @param options 层声明、尺寸与建场景的回调
+ * @returns 可直接交给合成器的 `FrameLayer`
  */
 export function createThreeLayer(options: ThreeLayerOptions): FrameLayer {
+  /** 本层自己的画布：尺寸由 options 决定，之后不再变 */
   const canvas = document.createElement("canvas");
   canvas.width = options.width;
   canvas.height = options.height;
+  /** 渲染器；首次 `render` 时创建，`dispose` 后置回 `null` */
   let renderer: ThreeRendererLike | null = null;
+  /** 场景；与渲染器同生命周期 */
   let scene: Scene | null = null;
+  /** 相机；与渲染器同生命周期，`update` 里可被直接修改 */
   let camera: Camera | null = null;
 
+  /** 首次渲染前的一次性初始化：建渲染器、场景、相机并调用 `build` */
   const setup = (): void => {
     if (renderer) return;
     renderer = options.createRenderer
@@ -92,6 +123,7 @@ export function createThreeLayer(options: ThreeLayerOptions): FrameLayer {
       });
     } else {
       // 与底图同一套设计坐标：640×360 设计单元按 height/360 放大
+      /** 缺省正交相机：视野正好覆盖输出像素范围，z=10 让常见图层落在近远平面之间 */
       const ortho = new OrthographicCamera(
         -options.width / 2,
         options.width / 2,

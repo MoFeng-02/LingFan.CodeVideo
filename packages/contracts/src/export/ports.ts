@@ -7,11 +7,15 @@ export type ExportFormat = "mp4" | "webm" | "frames";
 /** 实现标注：组合根按它选适配器 */
 export type ExporterImpl = "webcodecs" | "ffmpeg" | "frames";
 
+/** 导出结果：产物位置/句柄与本次导出的统计 */
 export interface ExportResult {
   /** 帧序列模式为目录/文件路径；编码模式为封装文件路径或 Blob */
   output: string | Blob;
+  /** 实际写出的帧数 */
   frames: number;
+  /** 成片时长（毫秒） */
   durationMs: Ms;
+  /** 产物格式，与 Exporter.format 一致 */
   format: ExportFormat;
 }
 
@@ -27,8 +31,15 @@ export interface ExportResult {
  * 且音频块按时间顺序连续提交；样本布局取 AudioClock 的采样率/声道声明。
  */
 export interface Exporter {
+  /** 实现标识：组合根据此选择适配器 */
   readonly impl: ExporterImpl;
+  /** 产物格式 */
   readonly format: ExportFormat;
+  /**
+   * 写入一帧。
+   * @param frame 设备句柄或 CPU 位图（所有权见类型说明）
+   * @param timestampMs 该帧在时间线上的时刻（毫秒）
+   */
   writeFrame(frame: FrameCarrier, timestampMs: Ms): Promise<void>;
   /** 交错 Float32 PCM（长度 = 帧数 × channels）；块序列自 0 起连续，拼接即整轨 */
   writeAudio?(
@@ -36,5 +47,6 @@ export interface Exporter {
     sampleRate: number,
     channels: number,
   ): Promise<void>;
+  /** 收尾：写完元数据并返回导出结果；调用后不得再写入 */
   finalize(): Promise<ExportResult>;
 }

@@ -15,9 +15,13 @@ export const DEFAULT_SYNTH_GAIN = 0.4;
 
 /** ADSR 包络（毫秒；sustain 是 0..1 的保持电平） */
 export interface SynthEnvelope {
+  /** 起音时长（毫秒）：从 0 升到满电平 */
   readonly attackMs: Ms;
+  /** 衰减时长（毫秒）：从满电平降到保持电平 */
   readonly decayMs: Ms;
+  /** 保持电平（0..1） */
   readonly sustain: number;
+  /** 释放时长（毫秒）：从保持电平降到 0 */
   readonly releaseMs: Ms;
 }
 
@@ -26,6 +30,7 @@ export interface SynthEnvelope {
  * 振荡器相位从 0 起算，同一份 spec 每次得到同样的样本。
  */
 export interface SynthSpec {
+  /** 振荡器波形（noise = 确定性伪随机，同 seed 同样本） */
   readonly wave: Waveform;
   /** 基频（Hz；noise 忽略） */
   readonly freq: number;

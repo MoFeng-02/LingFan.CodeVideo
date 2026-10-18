@@ -8,6 +8,9 @@ import type { AudioOptions, SynthSpec } from "@lingfan-video/contracts";
  * 否则同一个数字会被乘两次。
  *
  * 登记期 `env.synth` 与运行期 `ctx.synth` 共用这一处映射，两处入口的语义因此只有一份。
+ *
+ * @param spec 音源规格
+ * @returns 声音选项：只带摆位（缺省居中）与可选总线；不含增益
  */
 export function synthVoiceOptions(spec: SynthSpec): AudioOptions {
   return {

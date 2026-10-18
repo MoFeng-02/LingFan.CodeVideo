@@ -16,7 +16,10 @@ export type AssetKind =
  * 因此「资源可以是任意产物」是契约层面的承诺，而不是某个后端的特权。
  */
 export interface AssetLike {
+  /** 资产来源标识：通常是 URL，也可以是适配器自己的键 */
   readonly url: string;
+  /** 自解释种类（开放集合；引擎不据此分支） */
   readonly kind: AssetKind;
+  /** 适配器私有载荷：引擎原样交还，不做类型断言 */
   readonly payload?: unknown;
 }

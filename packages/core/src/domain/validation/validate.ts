@@ -1,13 +1,28 @@
+/**
+ * 剧本结构校验：纯检查、不产生渲染副作用，可在出片前对未渲染剧本运行。
+ *
+ * 做法是「干跑登记」——用 headless 登记器执行每段 body，把 `SceneEnv` 调用捕获成
+ * 节点流，再对节点流做结构检查；顺 `next` 走完整条链，检测环与重复段。
+ * 干跑会执行登记体，因此登记体必须只登记、不依赖真实画布（干跑时画布为 null）。
+ *
+ * 错误码只有两种：`window_overflow`（单元窗口越出段窗口）、
+ * `spec_violation`（重复链接、body 抛错、spawn 键重复、参数非法等）。
+ */
 import type { Ms, Scene, ValidationError } from "@lingfan-video/contracts";
 import type { SceneInternal, SimNode } from "../simulation/types";
 import { Recorder } from "../simulation/dsl";
 import { automationErrors, synthErrors } from "../audio";
 
 /**
- * 契约符合性检查：纯检查、无副作用、可对未渲染剧本前置运行。
- * 做法：干跑登记（Recorder 捕获节点流），再对节点流做结构性检查。
- * 检查项：window_overflow（step at/duration 越窗）、
- * spec_violation（重复链接、body 抛错、spawn key 段内重复）。
+ * 校验整条剧本链，返回全部结构问题（空数组 = 通过）。
+ *
+ * 检查范围：每段的单元窗口是否越出段窗口、登记体是否抛错、循环/嵌入链/音频声明的
+ * 参数是否合法、spawn 键是否段内重复、链上是否出现环或重复段。检查不修改剧本，
+ * 也不启动任何运行期状态；同一剧本可反复校验。
+ *
+ * @param scene 链头剧本（按 next 顺链检查）
+ * @param fps 干跑用的采样密度（帧/秒，缺省 60）：决定登记期缺省一帧的时长
+ * @returns 问题列表（按链上顺序）；每项含 path（段标识，分支为 `段/par`）、code、message
  */
 export function validate(scene: Scene<unknown>, fps = 60): ValidationError[] {
   const head = scene as SceneInternal<unknown>;

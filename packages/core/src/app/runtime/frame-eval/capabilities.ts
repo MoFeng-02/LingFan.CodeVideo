@@ -1,3 +1,9 @@
+/**
+ * 回调能力集的装配：音频、音频图、自消杀、事件去重。
+ *
+ * 这些能力按帧注入到 step/loop/wait 上下文里（「能力即上下文」），
+ * 本模块只负责把引擎状态包装成契约形状，不持有跨帧状态。
+ */
 import { SYNTH_CLIP } from "../../../domain/audio/synth-clip";
 import { synthVoiceOptions } from "../../../domain/audio/synth-voice";
 import type {
@@ -20,7 +26,16 @@ import { makeRenderError } from "../error";
 import type { EvalDeps, SpawnChain } from "../engine-types";
 import { disposeUnit } from "../spawn-handle";
 
-/** 运行期音频图能力（bus 句柄 / send / duck；与 audio 同一注入面） */
+/**
+ * 运行期音频图能力（bus 句柄 / send / duck；与 audio 同一注入面）。
+ *
+ * `bus(id)` 是唯一会立刻返回句柄的入口：给了 spec 就补登记拓扑（仅补不存在的），
+ * 无论是否给 spec 都保证该总线的参数面存在，以便回调马上改参数。
+ *
+ * @param deps 求值依赖（读写引擎状态）
+ * @param t 当前求值时刻（毫秒）；句柄操作本身取 `state.nowMs`，此参数保留给调用方对齐
+ * @returns AudioGraphEnv：`bus` / `send` / `duck`
+ */
 export function graphOf(deps: EvalDeps, t: Ms): AudioGraphEnv {
   void t;
   return {
@@ -34,7 +49,13 @@ export function graphOf(deps: EvalDeps, t: Ms): AudioGraphEnv {
   };
 }
 
-/** 运行期音频能力（能力即上下文：与 spawn/scheduler 同一注入面） */
+/**
+ * 运行期音频能力（能力即上下文：与 spawn/scheduler 同一注入面）。
+ *
+ * @param deps 求值依赖（声音记录写进引擎状态）
+ * @param t 发射时刻（时间线毫秒）；`options.at` 在此之上叠加为延迟
+ * @returns AudioEnv 的两项能力：`audio(clip, options?)` 与 `synth(spec)`
+ */
 export function audioOf(
   deps: EvalDeps,
   t: Ms,
@@ -47,7 +68,14 @@ export function audioOf(
   };
 }
 
-/** 自消杀糖：把「本单元」推进消亡（fadeOut 给消失过程） */
+/**
+ * 自消杀糖：把「本单元」推进消亡（fadeOut 给消失过程）。
+ *
+ * @param deps 求值依赖（消杀状态写进引擎状态）
+ * @param t 调用时刻（时间线毫秒），作为消亡窗口起点
+ * @param hostKey 宿主键（`sceneId/unitKey`；loop 用 loopBase，一次杀全迭代）
+ * @returns `dispose(options?)`：`fadeOut > 0` 进入窗口，否则立即硬死
+ */
 export function selfDisposeOf(deps: EvalDeps, t: Ms, hostKey: string) {
   return (options?: { fadeOut?: Ms }): void =>
     disposeUnit(deps.state, t, hostKey, options);
@@ -73,7 +101,21 @@ function onceKeyOf(
   }
 }
 
-/** 事件去重：同一作用域首次触发才执行；能力集只给发声与自消杀 */
+/**
+ * 事件去重：同一作用域首次触发才执行；能力集只给发声与自消杀。
+ *
+ * 去重键由作用域和单元实例推出，不含随机数与墙钟——同程序必得同键，
+ * 因此「第一次到这一步」是确定性的。
+ *
+ * @param deps 求值依赖（去重键合集挂在 `state.onceKeys`）
+ * @param t 当前求值时刻（毫秒），作为回调里发声的时刻
+ * @param sceneId 所属场景 id（作用域键的一部分）
+ * @param hostKey 宿主键（`sceneId/unitKey`，loop 为宿主锚点）
+ * @param chain 所属 spawn 链；主链传 `null`（`spawn` 作用域会区分链）
+ * @param iteration 当前迭代号（仅 `iteration` 作用域使用；无迭代时为 `undefined`，按 0 计）
+ * @returns 契约的 `once`：`once(fn)` 等价于 `once("unit", fn)`
+ * @throws RenderError（kind = step_throw）回调缺省时
+ */
 export function onceOf(
   deps: EvalDeps,
   t: Ms,

@@ -5,12 +5,26 @@
  */
 import type { FrameCarrier, FrameHandle } from "@lingfan-video/contracts";
 
-/** 是否是设备侧载体（画布 / 纹理 / 可直接包成 VideoFrame 的对象） */
+/**
+ * 是否是设备侧载体（画布 / 纹理 / 可直接包成 VideoFrame 的对象）。
+ *
+ * 只读 `kind` 字段，不做鸭子类型探测；CPU 位图没有 `kind` 或为 `"bitmap"`。
+ *
+ * @param carrier 待判断的帧载体
+ * @returns `true` 时类型收窄为 `FrameHandle`
+ */
 export function isFrameHandle(carrier: FrameCarrier): carrier is FrameHandle {
   return (carrier as { kind?: string }).kind === "handle";
 }
 
-/** 取出设备侧对象；不是句柄时明确报错，而不是静默回读像素 */
+/**
+ * 取出设备侧对象；不是句柄时明确报错，而不是静默回读像素。
+ *
+ * 错误发生在取值处而不是之后，调用方不会拿到「看起来像句柄」的替代物。
+ *
+ * @param carrier 待取用的帧载体
+ * @returns 设备侧句柄（含 `native` 与尺寸）
+ */
 export function requireFrameHandle(carrier: FrameCarrier): FrameHandle {
   if (!isFrameHandle(carrier)) {
     throw new Error(

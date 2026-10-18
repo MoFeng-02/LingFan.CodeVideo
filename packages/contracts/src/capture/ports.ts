@@ -3,9 +3,13 @@ import type { LayerDeclaration } from "../scene/layers";
 
 /** 帧载体（CPU 位图最小形态；数据在 CPU 侧可读写，纹理等载体由其上层自行适配） */
 export interface FrameBitmap {
+  /** 载体形态判别符；省略视为 "bitmap" */
   readonly kind?: "bitmap";
+  /** 像素数据（RGBA，每通道 8 位；长度 = width × height × 4） */
   data: Uint8ClampedArray;
+  /** 宽（像素） */
   width: number;
+  /** 高（像素） */
   height: number;
 }
 
@@ -23,10 +27,15 @@ export interface FrameBitmap {
  * - 一个句柄只能 `close()` 一次，重复释放是使用方错误。
  */
 export interface FrameHandle {
+  /** 载体形态判别符，固定 "handle" */
   readonly kind: "handle";
+  /** 不透明底层对象：由渲染后端与消费后端协商 */
   readonly native: unknown;
+  /** 宽（像素） */
   readonly width: number;
+  /** 高（像素） */
   readonly height: number;
+  /** 释放底层资源；一个句柄只能调用一次 */
   close(): void;
 }
 
@@ -45,11 +54,18 @@ export type FrameCarrier = FrameBitmap | FrameHandle;
  * 测试桩与出片后端均实现本契约。
  */
 export interface FrameSink {
+  /**
+   * 写入一帧。
+   * @param frame 帧载体（位图或设备句柄）
+   * @param index 采样点帧号（0 起）
+   * @param timestampMs 该采样点的时间戳（毫秒）
+   */
   writeFrame(
     frame: FrameCarrier,
     index: FrameIndex,
     timestampMs: Ms,
   ): void | Promise<void>;
+  /** 收尾：全部帧交完后调用一次 */
   finalize(): Promise<void>;
 }
 
@@ -63,6 +79,8 @@ export interface FrameSink {
  *
  * 返回 `FrameHandle` 即表示「本帧不经过 CPU 像素」：引擎不读它的内容，只用它把
  * 这一帧交给 sink，并在 sink 处理完后释放它（见 `FrameHandle` 的所有权约定）。
+ *
+ * 参数：frame = 采样点帧号（0 起）；timestampMs = 该采样点时间戳（毫秒）。
  */
 export type FrameSource = (
   frame: FrameIndex,
@@ -71,10 +89,15 @@ export type FrameSource = (
 
 /** 一次推演开始时的固定参数：宿主要用它们建舞台、定相机与时间线长度 */
 export interface FrameHostInfo {
+  /** 采样密度（帧/秒） */
   readonly fps: number;
+  /** 画布宽（像素） */
   readonly width: number;
+  /** 画布高（像素） */
   readonly height: number;
+  /** 整片时长（毫秒） */
   readonly durationMs: Ms;
+  /** 是否无呈现出片：不建显示面、只求值与编码 */
   readonly headless: boolean;
   /**
    * 本片声明的画面层（剧本 `env.layer(...)` 的编译产物，绝对故事时间）。
@@ -98,11 +121,21 @@ export interface FrameHostInfo {
  *   `FrameHandle` 的所有权约定交给引擎释放。
  */
 export interface FrameHost {
+  /**
+   * 建场：每次推演开始时调用一次（重播即重置）。
+   * @param info 本次推演的固定参数
+   */
   begin(info: FrameHostInfo): void | Promise<void>;
+  /**
+   * 取当帧画面。
+   * @param frame 采样点帧号（0 起）
+   * @param timestampMs 该采样点时间戳（毫秒）
+   */
   frame(
     frame: FrameIndex,
     timestampMs: Ms,
   ): FrameCarrier | Promise<FrameCarrier>;
+  /** 收场：推演结束（成功或失败）后调用；可不实现 */
   close?(): void | Promise<void>;
 }
 

@@ -1,3 +1,11 @@
+/**
+ * 时间线构建：主链展开成段窗口，spawn 链展开成各自的段窗口，再把段内声明
+ * （画面层、声音、总线自动化）全局化到绝对时间线。
+ *
+ * 构建期允许等待 setup 的 I/O（资产加载），求值期不允许：所以这里先把所有
+ * 链上场景的 setup 解析完，再同步编译；运行期 spawn 的异步 setup 走另一条路
+ * （帧边界物化，见 runtime-spawn）。
+ */
 import type { AutomationPoint, BusId, Ms } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
 import type {
@@ -14,7 +22,14 @@ import { walkChain } from "./runtime-spawn";
 import { overlapOffset } from "./timeline-spans";
 import type { ChainSpan, SpawnChain, TimelineState } from "./engine-types";
 
-/** 重入复位（computeAt/collect/run 共用一引擎时防串台） */
+/**
+ * 重入复位（computeAt/collect/run 共用一引擎时防串台）。
+ *
+ * 时间线结构、声音记录、去重键、总线状态全部清空；setup 记账也重来一次
+ * （资产按本次推演的解码器重新加载，跨推演不共享句柄）。
+ *
+ * @param state 引擎状态（原地清空，不替换对象）
+ */
 export function resetTimeline(state: TimelineState): void {
   state.spans = [];
   state.spawnChains.length = 0;
@@ -43,7 +58,17 @@ export function resetTimeline(state: TimelineState): void {
   state.setupDone = new WeakSet();
 }
 
-/** 主链时间线构建：成环检测、prev 链式传参、transition 优先、spawn 链展开 */
+/**
+ * 主链时间线构建：成环检测、prev 链式传参、transition 优先、spawn 链展开。
+ *
+ * 段起点由「上一段声明的重叠窗」前移；末点取内容实况（`activeEnd` 提前收窗）。
+ * 终界 = 主链池尾与有界 spawn 链内容末点的较大者，forever 链的寿命在终界确定后才夹取。
+ * 收尾把层/声音/自动化从段内相对时刻全局化。
+ *
+ * @param state 引擎状态（先复位再写入）
+ * @param head 主链头场景
+ * @throws RenderError（kind = spec_violation）剧本链成环、重叠窗不小于段长、构建期遇到异步 setup
+ */
 export async function buildTimeline(
   state: TimelineState,
   head: SceneEntry,
@@ -196,7 +221,15 @@ async function ensureSetup(
   if (isThenable(result)) await result;
 }
 
-/** 沿 next 链预解析 setup（next 已含 transition 目标）：同步 buildChain 之前必须做完 */
+/**
+ * 沿 next 链预解析 setup（next 已含 transition 目标）：同步 buildChain 之前必须做完。
+ *
+ * 只遍历一次（按对象身份去重），因此同一场景出现多次时 setup 仍只跑一次
+ * （由 `setupDone` 记账保证）。
+ *
+ * @param state 引擎状态（读 setup 记账与注入面）
+ * @param head 链头场景
+ */
 export async function ensureSetupChain(
   state: TimelineState,
   head: SceneInternal<unknown>,
@@ -210,7 +243,17 @@ export async function ensureSetupChain(
   }
 }
 
-/** 展开 spawn 链（编译期锚定的）；depth 帽 3（嵌套 spawn）。链登记由 buildChain 内完成，此处不再返回 */
+/**
+ * 展开 spawn 链（编译期锚定的）；depth 帽 3（嵌套 spawn）。链登记由 buildChain 内完成，此处不再返回。
+ *
+ * 每个 spawn 先解析链上场景的 setup（可能异步），保证随后的编译是全同步的；
+ * 子链自己的 spawn 递归展开（深度 +1）。
+ *
+ * @param state 引擎状态
+ * @param seg 已编译的段（读其中的 spawn 声明）
+ * @param spanStart 该段在时间线上的起点（全局毫秒）
+ * @param depth 当前嵌套深度（0 起；超过 3 直接返回，不再展开）
+ */
 export async function expandSpawns(
   state: TimelineState,
   seg: CompiledSegment,
@@ -235,7 +278,21 @@ export async function expandSpawns(
   }
 }
 
-/** 构造一条链并登记（同 key 活跃链已存在 → 返回 undefined，续接语义）；forever 端点先记 Infinity */
+/**
+ * 构造一条链并登记（同 key 活跃链已存在 → 返回 undefined，续接语义）；forever 端点先记 Infinity。
+ *
+ * 链长只有显式 `duration` 才定死（`fixedEnd`），否则按内容实况回填——
+ * transition 短路或单元窗口更早结束时，声明池长会虚高。
+ *
+ * @param state 引擎状态（链表与版本号都在这里）
+ * @param key 去重键（同 key 且时间窗重叠视为同一链）
+ * @param head 链头场景
+ * @param start 链起点（全局毫秒）
+ * @param duration 链长（毫秒）；`Infinity` = forever，寿命到时间线尾或显式 kill
+ * @param chainFps 链级继承帧率；缺省 = 引擎基础帧率
+ * @returns 新建的链；同 key 活跃链已存在时 `undefined`（调用方按续接处理）
+ * @throws RenderError（kind = spec_violation）链上场景 setup 返回 Promise（构建期不得等待）
+ */
 export function buildChain(
   state: TimelineState,
   key: string,

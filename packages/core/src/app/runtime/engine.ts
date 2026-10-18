@@ -69,11 +69,18 @@ export class TimelineEngine {
   private readonly aggregator = new StateAggregator();
   private painter: Painter | null = null;
 
+  /**
+   * @param opts 推演配置：帧尺寸、基础采样密度、绘制目标与各注入面（见 {@link EngineOptions}）
+   */
   constructor(opts: TimelineState["opts"]) {
     this.state = makeState(opts);
   }
 
-  /** 注入同步帧来源（2D 回读 / 自绘 / 设备句柄；未装配 → spec_violation） */
+  /**
+   * 注入同步帧来源（2D 回读 / 自绘 / 设备句柄；未装配 → spec_violation）。
+   *
+   * @param p 逐帧取位图的纯函数来源：帧号（从 0 起）、时刻（毫秒）→ 帧载体
+   */
   setPainter(p: FrameSource): void {
     this.painter = p;
   }
@@ -81,6 +88,8 @@ export class TimelineEngine {
   /**
    * 注入帧来源：纯函数来源（同步或返回 Promise）或带生命周期的宿主。
    * 宿主在每次推演开始时收到 `begin`（重播即重置），结束时收到 `close`。
+   *
+   * @param source 帧来源：`FrameSource` 或 `FrameHost`（后者在 `run` 里走 begin/close）
    */
   setFrameSource(source: Painter): void {
     this.painter = source;
@@ -105,7 +114,19 @@ export class TimelineEngine {
     };
   }
 
-  /** 正片渲染：沿采样网格逐点求值并交帧；运行期 spawn 新增链 → 重建剩余网格（动态流式采样） */
+  /**
+   * 正片渲染：沿采样网格逐点求值并交帧；运行期 spawn 新增链 → 重建剩余网格（动态流式采样）。
+   *
+   * 时序：先完整构建时间线（setup 与异步 I/O 都在这之前完成），再逐帧求值-交帧。
+   * 有状态帧宿主先收到 `begin`，无论成败都在收尾时收到 `close`（close 失败不掩盖推演失败）。
+   * 全过程不等待墙钟，帧时刻只来自采样网格，因此同剧本同配置可复现。
+   *
+   * @param head 主链头场景（`start` 返回的入口）
+   * @param sink 帧出口：逐帧 `writeFrame(carrier, index, timestampMs)`，收尾 `finalize`
+   * @param onProgress 每写完一帧回调（已写帧数 / 本次网格总点数）；总数会因运行期 spawn 重采样而变化
+   * @returns {@link RunSummary}：帧数、时间线终界、终态与整条时间线的声音记录
+   * @throws RenderError（kind = spec_violation / step_throw 等）或帧来源/宿主抛出的错误
+   */
   async run(
     head: SceneEntry,
     sink: FrameSink,
@@ -150,13 +171,25 @@ export class TimelineEngine {
    * 不渲染任何帧、不碰输出设备——用途是让预览端在页面加载时预热整条配乐的 PCM
    * （见 `WebAudioOutput.warm`）。程序与随后 `run` 得到的逐项相同：两者走同一条
    * 登记/编译路径，只是 `run` 还会在其后继续逐帧推演。
+   *
+   * @param head 主链头场景（与 `run` 传同一个）
+   * @returns 与 `run` 交给 `AudioOutput.begin` 的同一份程序：总时长、声音记录、音频图
    */
   async compileAudioProgram(head: SceneEntry): Promise<AudioProgram> {
     await this.buildTimeline(head);
     return buildAudioProgram(this.state);
   }
 
-  /** 逐点求值 + 交帧主循环（打帧源生命周期与错误收口都由 run 负责） */
+  /**
+   * 逐点求值 + 交帧主循环（打帧源生命周期与错误收口都由 run 负责）。
+   *
+   * 帧载体所有权随 `writeFrame` 转移：设备句柄类载体在交帧后由引擎 close。
+   * 运行期 spawn 追加链或物化链后网格会重建，续跑严格晚于当前点，已交出的帧不重算。
+   *
+   * @param sink 帧出口
+   * @param onProgress 每写完一帧回调（已写帧数 / 当前网格总点数）
+   * @returns {@link RunSummary}
+   */
   private async renderGrid(
     sink: FrameSink,
     onProgress?: (done: number, total: number) => void,
@@ -201,7 +234,17 @@ export class TimelineEngine {
     };
   }
 
-  /** computeRange：采样网格 ∩ [from,to) 逐点采样完整状态表（同一次登记复用；动态链同样重采样） */
+  /**
+   * computeRange：采样网格 ∩ [from,to) 逐点采样完整状态表（同一次登记复用；动态链同样重采样）。
+   *
+   * 只做模拟求值、不产位图；区间端点是时间线毫秒，`to` 不含。
+   * 动态 spawn 重采样时续跑严格晚于当前点，已产出的状态不重算。
+   *
+   * @param head 主链头场景
+   * @param from 区间起点（毫秒，含）
+   * @param to 区间终点（毫秒，不含）
+   * @returns 按时间升序的完整状态表（每点一份，含全部活跃键）
+   */
   async collect(head: SceneEntry, from: Ms, to: Ms): Promise<FrameState[]> {
     await this.buildTimeline(head);
     let grid = buildSampleGrid(this.state).filter(
@@ -229,7 +272,16 @@ export class TimelineEngine {
     return out;
   }
 
-  /** computeAt：≤t 的最近采样点的完整状态表；越时间线尾 → undefined */
+  /**
+   * computeAt：≤t 的最近采样点的完整状态表；越时间线尾 → undefined。
+   *
+   * 「最近」按网格点取（二分），因此返回的是某个真实采样时刻的状态，
+   * 不是按 t 插值出来的中间态。
+   *
+   * @param head 主链头场景
+   * @param t 查询时刻（毫秒）
+   * @returns 该时刻之前（含）最近的网格点状态表；t 早于首个网格点或越过终界时 `undefined`
+   */
   async stateAt(head: SceneEntry, t: Ms): Promise<FrameState | undefined> {
     await this.buildTimeline(head);
     if (t >= this.state.timelineEnd) return undefined;
@@ -258,7 +310,11 @@ export class TimelineEngine {
     evaluateFrame(this.deps(), f, t);
   }
 
-  /** 预览端：把逐帧总线参数同步给实时音频图（无 setBus 的实现忽略） */
+  /**
+   * 预览端：把逐帧总线参数同步给实时音频图（无 setBus 的实现忽略）。
+   *
+   * @param t 当前帧时刻（毫秒）；过渡时长由相邻两次下发的间隔推出
+   */
   private syncBusParams(t: Ms): void {
     const out = this.state.opts.audioOut;
     if (!out?.setBus) return;
@@ -273,6 +329,15 @@ export class TimelineEngine {
     };
   }
 
+  /**
+   * 取一帧载体：纯函数来源逐帧直接取，宿主来源走 `frame` 且等待 Promise。
+   *
+   * @param f 帧号（从 0 起）
+   * @param t 帧时刻（毫秒）
+   * @param _state 本帧状态表（当前实现不向帧来源传递，保留给需要的后端）
+   * @returns 帧载体（位图或设备句柄）
+   * @throws RenderError（kind = spec_violation）未装配帧来源时
+   */
   private async painterPaint(
     f: FrameIndex,
     t: Ms,

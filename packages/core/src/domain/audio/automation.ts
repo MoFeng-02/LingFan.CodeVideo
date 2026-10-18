@@ -1,9 +1,25 @@
+/**
+ * 参数计划（自动化点表）的合法性判据。
+ *
+ * 判据与登记期抛错、静态校验共用一处：结构对象可被字面量直接构造，
+ * 因此不能只靠组合子构造时的校验。一次报全全部问题，便于静态校验一次性提示。
+ * 时刻单位是毫秒（相对本段起点），同一时刻重复没有先后可言，故要求严格递增。
+ */
 import type { BusAutomationSpec } from "@lingfan-video/contracts";
 import { gainError } from "./gain-units";
 
 /**
  * 声明式自动化点表的形式问题（一次报全，便于静态校验一次性提示）。
  * 登记期抛错与静态校验共用这一处判据：结构对象可被字面量直接构造，不能只靠构造期校验。
+ */
+/**
+ * 列出参数计划的全部形式问题（空数组 = 合法）。
+ *
+ * 检查项：总线名非空、每个点 `atMs` 为 ≥0 的有限毫秒且严格递增、`gain` 记法合法、
+ * `pan` 在 [-1, 1]、`rampMs` 为 ≥0 的有限毫秒。
+ *
+ * @param spec 参数计划（总线名 + 按时间排列的点）
+ * @returns 问题文案列表（按点序；每项自带定位信息）
  */
 export function automationErrors(spec: BusAutomationSpec): string[] {
   const errors: string[] = [];
@@ -39,7 +55,12 @@ export function automationErrors(spec: BusAutomationSpec): string[] {
   return errors;
 }
 
-/** 登记期校验：首条问题即抛（错误名 SpecViolation，与契约违规同一出口） */
+/**
+ * 登记期校验：首条问题即抛，错误名为 SpecViolation（与契约违规同一出口）。
+ *
+ * @param spec 参数计划
+ * @throws SpecViolation 任一形式问题存在时（消息为第一条问题）
+ */
 export function assertAutomation(spec: BusAutomationSpec): void {
   const first = automationErrors(spec)[0];
   if (first === undefined) return;

@@ -1,3 +1,9 @@
+/**
+ * 声明式输入轨道：事件表的校验、排序与逐帧快照。
+ *
+ * 输入不是实时事件流，而是一份可复现的事件表——预览与导出注入同一份数据，
+ * 逐帧求值出的快照序列因此完全一致。轨道本身只读，`snapshotAt(t)` 是它的全部查询面。
+ */
 import type {
   InputEvent,
   InputSnapshot,
@@ -95,6 +101,10 @@ function snapshotAt(list: readonly InputEvent[], t: Ms): InputSnapshot {
 /**
  * 输入轨道工厂：校验 + 归一化 + 快照查询。
  * 输入是声明式数据而非实时事件——预览与导出注入同一份事件表，快照序列因此一致。
+ *
+ * @param events 输入事件表（毫秒时刻；缺省或 `undefined` = 空轨道：指针在原点未按下、无按键）
+ * @returns 只读轨道：`events` 为按 `atMs` 升序（同刻保持声明顺序）的拷贝，`snapshotAt(t)` 折叠 `atMs <= t` 的事件
+ * @throws RenderError（kind = spec_violation）事件非数组或任一条字段非法时，在开工前即失败
  */
 export function createInputTrack(
   events: readonly InputEvent[] | undefined,

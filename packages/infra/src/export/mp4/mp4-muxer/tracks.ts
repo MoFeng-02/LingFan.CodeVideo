@@ -1,4 +1,10 @@
-/** 轨道容器：把样本表与媒体头组装成 trak（tkhd + mdia/minf/stbl）。 */
+/**
+ * 轨道容器：把样本表与媒体头组装成 trak（tkhd + mdia/minf/stbl）。
+ *
+ * 一条轨的组装只依赖两样输入：轨道声明（尺寸/采样率/参数集）与该轨的编码块列表。
+ * 视频轨与音频轨结构对称，差别只在样本条目（`avc1` 与 `mp4a`）与是否有 `stss`。
+ * 这里不校验块的时间戳单调性，那是上游导出器的责任。
+ */
 import { box, fourcc, textOf, u16, u32, zeros } from "../boxes";
 import type {
   AudioChunkSpec,

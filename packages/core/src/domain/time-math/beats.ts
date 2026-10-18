@@ -7,13 +7,20 @@
 import type { Ms } from "@lingfan-video/contracts";
 import { violation } from "../spec-violation";
 
-/** 一拍毫秒数（120 BPM = 500ms/拍） */
+/**
+ * 一拍毫秒数：`60000 / bpm`（120 BPM = 500ms/拍）。
+ *
+ * @param bpm 每分钟拍数（> 0 的有限数）
+ * @returns 一拍时长（毫秒）
+ * @throws spec_violation bpm 非正或非有限数时
+ */
 export function msPerBeat(bpm: number): Ms {
   if (!Number.isFinite(bpm) || bpm <= 0)
     throw violation(`bpm=${String(bpm)} 须为 > 0 的有限数`);
   return 60000 / bpm;
 }
 
+/** 拍网格的构造参数：拍速 + 细分 + 一个上界（点数或截止时刻二选一）。 */
 export interface BeatGridOptions {
   /** 每分钟拍数（> 0） */
   readonly bpm: number;
@@ -31,7 +38,13 @@ export interface BeatGridOptions {
 
 /**
  * 拍网格点（毫秒，严格递增）：`from + offsetMs + i * (一拍/细分)`。
- * count 与 untilMs 必须给且只给一个——没有上界的网格会无限长。
+ *
+ * `count` 与 `untilMs` 必须给且只给一个——没有上界的网格会无限长。
+ * 给 `untilMs` 时只保留严格小于它的点；`offsetMs` 用于后置拍/切分。
+ *
+ * @param options 拍网格参数：bpm、subdivision、count/untilMs、from、offsetMs
+ * @returns 网格时刻（毫秒，严格递增）
+ * @throws spec_violation 参数非法或上界缺失/二义时
  */
 export function beatGrid(options: BeatGridOptions): readonly Ms[] {
   const beat = msPerBeat(options.bpm);

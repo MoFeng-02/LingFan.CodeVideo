@@ -22,13 +22,21 @@ import type { EvalDeps, TimelineState } from "./engine-types";
 
 /** 运行期可变声音记录（contracts 侧只读；引擎内部追加 ops） */
 export interface MutableVoice {
+  /** 声音标识：`voice#<序号>`，由引擎按确定性序号分配 */
   id: string;
+  /** 片段引用（setup 阶段已解码的资产） */
   clip: AudioClip;
+  /** 起始时刻（时间线毫秒；调用方已把 at/延迟折算进来） */
   startMs: Ms;
+  /** 增益：线性幅度 + 可选淡入淡出/包络 */
   gain: AudioVoice["gain"];
+  /** 声像：-1 全左 ~ 1 全右 */
   pan: AudioVoice["pan"];
+  /** 循环设置；`null` = 不循环 */
   loop: AudioVoice["loop"];
+  /** 变速/变调设置；`null` = 原速 */
   rate: AudioVoice["rate"];
+  /** 运行期操作记录（stop/gain/rate 各自带生效时刻），导出端据此复算 */
   ops: AudioOp[];
   /** 送往哪条总线（缺省 master） */
   bus?: AudioVoice["bus"];
@@ -36,7 +44,19 @@ export interface MutableVoice {
   synth?: SynthSpec;
 }
 
-/** 新建声音记录并登记（id 由引擎序号分配，保证确定性） */
+/**
+ * 新建声音记录并登记（id 由引擎序号分配，保证确定性）。
+ *
+ * 登记期（段声明全局化）与运行期发射共用这一条路径，两种来源产出同形态的记录；
+ * 播放选项的缺省值由声音工厂归一（缺省增益 1、摆位居中）。
+ *
+ * @param state 引擎状态（声音表与序号在这里）
+ * @param clip 片段引用
+ * @param startMs 起点（全局时间线毫秒；调用方负责把 at/延迟折算进来）
+ * @param options 播放选项（增益/摆位/循环/变速/总线）；缺省取归一后的默认值
+ * @param synth 程序化音源描述；给出时混音层用确定性生成器合成
+ * @returns 已登记的声音记录（引擎内部可变形态）
+ */
 export function pushVoice(
   state: TimelineState,
   clip: AudioClip,
@@ -60,6 +80,17 @@ export function pushVoice(
  * ctx.audio 实现：登记声音、交给实时输出（若装配）、返回句柄。
  * 句柄操作以「当前求值时刻」为生效时刻；回调之外调用属于没有时间轴依据的操作，
  * 直接报 spec_violation（不让声音的操作时刻变成未定义）。
+ *
+ * 声音记录在登记时就已全局化：起点的负值夹到 0；实时输出只影响预览端发声，
+ * 不改变记录本身，因此导出端与预览端拿到的是同一份时间线。
+ *
+ * @param deps 求值依赖（状态 + 聚合器）
+ * @param clip 片段引用
+ * @param options 播放选项；其中 `at` 在运行期是相对发射时刻的延迟（毫秒，负值按 0）
+ * @param atMs 发射时刻（全局时间线毫秒，取当前帧求值时间）
+ * @param synth 程序化音源描述（`ctx.synth` 走这条路径）
+ * @returns 声音句柄（stop/setGain/setRate 只在回调窗口内合法）
+ * @throws RenderError（kind = spec_violation）句柄在回调外操作、增益单位非法、变速值非正
  */
 export function emitAudio(
   deps: EvalDeps,

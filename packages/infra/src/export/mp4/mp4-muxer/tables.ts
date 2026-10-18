@@ -1,4 +1,12 @@
-/** 样本表与样本条目：stsd/stts/stsc/stsz/stco/stss 的构造。 */
+/**
+ * 样本表与样本条目：stsd/stts/stsc/stsz/stco/stss 的构造。
+ *
+ * 这几个表是 mp4 的寻址骨架：`stts` 给时长、`stsz` 给字节数、`stsc` 把样本
+ * 分组到 chunk、`stco` 给每个 chunk 的文件偏移、`stss` 标出关键帧。
+ * 样本顺序必须与 `mdat` 里实际写入的顺序完全一致——本模块按写入序生成表，
+ * 因此调用方只能追加、不能重排编码块。偏移量在这里是「相对于 mdat 载荷起点」
+ * 计算的，最终加上文件头的绝对偏移由封装器负责。
+ */
 import { box, fixed1616, u16, u32, zeros } from "../boxes";
 import { makeEsds } from "../aac";
 import type {

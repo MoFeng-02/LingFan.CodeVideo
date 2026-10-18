@@ -23,15 +23,20 @@ export type Backend = "2d" | "webgpu" | "webgl" | (string & {});
  * 后端不再自定。呈现方式不由引擎猜——没有后端就没有渲染产物。
  */
 export interface RenderOptions {
+  /** 采样密度（帧/秒）；全片基础帧率，单元可各自声明更高/更低的值 */
   fps: number;
+  /** 画布宽（像素） */
   width: number;
+  /** 画布高（像素） */
   height: number;
+  /** 渲染后端标识（开放集合；只用于适配器选择，不参与引擎行为） */
   backend?: Backend;
   /**
    * 默认 2D 适配器的绘制目标。框架集成可以不给：只注入 `painter` 即可，
    * 引擎不会因此去找 DOM 画布（无 canvas 也能出帧）。
    */
   canvas?: HTMLCanvasElement | OffscreenCanvas;
+  /** 渲染产物出口：预览端与导出端都实现它 */
   exporter: Exporter;
   /** 资产来源（setup 阶段 assets.load 后端；缺省 = fail-fast） */
   assets?: AssetSource;
@@ -53,6 +58,7 @@ export interface RenderOptions {
    * - "allow-blank"：显式接受全 0 占位位图（预览 sink 自绘、或只关心时间/音频的场合）
    */
   frames?: "required" | "allow-blank";
+  /** 是否无呈现推演：不建显示面、只求值与编码 */
   headless?: boolean;
   /**
    * 输入事件表（时间线毫秒 + 归一化坐标/按键）：声明式数据，不是实时输入。
@@ -66,17 +72,31 @@ export interface RenderOptions {
    * 随机是数据：不写进代码的隐式熵，同一份剧本才有一段可复算的推演。
    */
   seed?: number;
+  /**
+   * 进度回调：每写完一帧调用一次。
+   * @param doneFrames 已完成的帧数
+   * @param totalFrames 预计总帧数
+   */
   onProgress?(doneFrames: number, totalFrames: number): void;
 }
 
+/** 推演结果：帧数、时长与导出器产物 */
 export interface RenderResult {
+  /** 本次实际写出的帧数 */
   frames: number;
+  /** 成片时长（毫秒） */
   durationMs: Ms;
   /** exporter.finalize() 的结果；形态由该后端决定 */
   output: ExportResult;
 }
 
+/** 推演入口：推演一段剧本并返回成片结果 */
 export interface RenderFn {
+  /**
+   * @param scene 剧本根场景
+   * @param options 分辨率、帧率、导出器与各能力的注入
+   * @returns 成片帧数、时长与导出器产物
+   */
   (scene: Scene<unknown>, options: RenderOptions): Promise<RenderResult>;
 }
 
@@ -85,6 +105,12 @@ export type ValidateFn = (scene: Scene<unknown>) => ValidationError[];
 
 /** 状态抽取：登记不重跑；[0,from) 重放模拟只弃绘制与编码 */
 export interface ComputeFns {
+  /**
+   * 求某个时刻的状态。
+   * @param scene 剧本根场景
+   * @param t 时间线时刻（毫秒）
+   * @returns 该时刻的逐帧状态；该时刻无活跃单元时为 undefined
+   */
   computeAt<P>(scene: Scene<P>, t: Ms): Promise<FrameState | undefined>;
   /** 采样点 = 时间线采样网格（各单元自身帧率）∩ [from,to)；stepMs 保留参数位（兼容旧调用），网格密度优先 */
   computeRange<P>(

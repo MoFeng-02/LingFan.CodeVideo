@@ -8,7 +8,14 @@ import type { AudioProgram } from "@lingfan-video/contracts";
 import { buildAudioGraph } from "./audio-graph";
 import type { TimelineState } from "./engine-types";
 
-/** 时间线状态的音频程序：总时长 + 登记期声音 + 总线图（三者同一时刻产出） */
+/**
+ * 时间线状态的音频程序：总时长 + 声音记录 + 总线图（三者同一时刻产出）。
+ *
+ * `voices` 直接引用运行期的声音记录表：登记期声明已在其中，运行期发射再往后追加。
+ *
+ * @param state 已完成时间线构建的引擎状态
+ * @returns 交给 AudioOutput 的程序
+ */
 export function buildAudioProgram(state: TimelineState): AudioProgram {
   return {
     durationMs: state.timelineEnd,

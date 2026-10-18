@@ -1,3 +1,10 @@
+/**
+ * 音频图与总线参数面：把登记期声明与运行期懒建汇入一张全时间线图，并逐帧采出参数轨迹。
+ *
+ * 两层表示：拓扑（总线/发送/压制）与参数（目标值 + 在途过渡 + 采样点）。
+ * 参数以「目标值叠加过渡曲线」求值，轨迹逐帧记录、帧间由混音端线性插值；
+ * 图构建时把未知端点回落 master、把父链成环报成 spec_violation。
+ */
 import type {
   AudioGraph,
   BusAutomation,
@@ -26,7 +33,15 @@ import { makeRenderError } from "./error";
 
 const DEFAULT_PARAMS: BusParams = { gain: 1, pan: 0, mute: false, solo: false };
 
-/** 段内登记期声明汇入全时间线图（同 id / 同 from→to 覆盖，后声明为准） */
+/**
+ * 段内登记期声明汇入全时间线图（同 id / 同 from→to 覆盖，后声明为准）。
+ *
+ * 段每出现一次都会调用一次（forever 重放、同段多次出现），覆盖语义因此等价于
+ * 「最后一处声明生效」；运行期懒建不会反向覆盖这里已登记的规格。
+ *
+ * @param state 引擎状态（总线/发送/压制表）
+ * @param seg 已编译的段
+ */
 export function mergeSegmentGraph(
   state: TimelineState,
   seg: CompiledSegment,
@@ -38,7 +53,13 @@ export function mergeSegmentGraph(
     state.ducks.set(`${rule.from}->${rule.to}`, rule);
 }
 
-/** 运行期懒建拓扑：只补不存在（登记期声明优先，运行期不覆盖已有规格） */
+/**
+ * 运行期懒建拓扑：只补不存在（登记期声明优先，运行期不覆盖已有规格）。
+ *
+ * @param state 引擎状态
+ * @param id 总线标识
+ * @param spec 总线规格（不含 id）；父总线缺省 master
+ */
 export function ensureBusSpec(
   state: TimelineState,
   id: BusId,
@@ -47,12 +68,24 @@ export function ensureBusSpec(
   if (!state.busSpecs.has(id)) state.busSpecs.set(id, { ...spec, id });
 }
 
-/** 运行期补登记发送（同 from→to 覆盖） */
+/**
+ * 运行期补登记发送（同 from→to 覆盖）。
+ *
+ * 发送量等字段由规格给出；这里只登记拓扑，不即时发声。
+ *
+ * @param state 引擎状态
+ * @param spec 发送规格（from/to 为总线标识，缺少的端点在图构建时回落 master）
+ */
 export function registerSend(state: TimelineState, spec: SendSpec): void {
   state.sends.set(`${spec.from}->${spec.to}`, spec);
 }
 
-/** 运行期补登记侧链规则（同 from→to 覆盖） */
+/**
+ * 运行期补登记侧链规则（同 from→to 覆盖）。
+ *
+ * @param state 引擎状态
+ * @param rule 压制规则（from 触发、to 被压低，amountDb 为正数的最多压低量）
+ */
 export function registerDuck(state: TimelineState, rule: DuckRule): void {
   state.ducks.set(`${rule.from}->${rule.to}`, rule);
 }
@@ -108,6 +141,15 @@ function pruneRamps(state: TimelineState, id: BusId, atMs: Ms): void {
  * 登记参数过渡：起点默认取当前有效值（在途过渡的当前插值）；
  * 也可给出起点时刻——声明式轨迹以声明时刻为起点，曲线因此不随帧格漂移。
  * rampMs ≤ 0 = 立即生效并清掉该参数的在途过渡。
+ *
+ * 一个参数同时至多一条在途过渡：重复登记会替换掉旧的整段斜坡。
+ *
+ * @param state 引擎状态
+ * @param id 总线标识
+ * @param key 参数名（`gain` / `pan`）
+ * @param to 目标值（增益为线性幅度 ≥ 0；声像为 -1..1）
+ * @param rampMs 过渡时长（毫秒）；`undefined` / 0 = 立即生效
+ * @param fromMs 过渡起点时刻（时间线毫秒）；缺省 = 当前求值时刻
  */
 export function registerParamRamp(
   state: TimelineState,
@@ -126,7 +168,15 @@ export function registerParamRamp(
   else state.busRamps.delete(id);
 }
 
-/** 落参数目标值（不动在途过渡；轨迹点统一由帧末采样记录） */
+/**
+ * 落参数目标值（不动在途过渡；轨迹点统一由帧末采样记录）。
+ *
+ * 只覆盖 patch 里给出的字段，其余保持当前有效值。
+ *
+ * @param state 引擎状态
+ * @param id 总线标识
+ * @param patch 要改的参数（gain/pan/mute/solo 的子集）
+ */
 export function writeBusParams(
   state: TimelineState,
   id: BusId,
@@ -152,7 +202,16 @@ function pushPoint(state: TimelineState, id: BusId, point: BusPoint): void {
   list.push(point);
 }
 
-/** 逐帧采样：所有已登记总线（含运行期懒建的）在当前时刻的参数点 */
+/**
+ * 逐帧采样：所有已登记总线（含运行期懒建的）在当前时刻的参数点。
+ *
+ * 每个采样点都记录（不做相邻相同值去重）：去重会把保持段折叠成稀疏点，
+ * 混音端的线性插值就会把恒定段提前斜坡化。kill 的消亡窗口内继续出参数，
+ * 只在窗口内按进度压低增益、窗口结束后静音；已完成过渡在这里出清。
+ *
+ * @param deps 求值依赖（状态 + 聚合器）
+ * @param t 采样时刻（时间线毫秒）
+ */
 export function sampleBuses(deps: EvalDeps, t: Ms): void {
   const { state } = deps;
   if (state.busSpecs.size === 0 && state.busParams.size === 0) return;
@@ -190,6 +249,12 @@ export function sampleBuses(deps: EvalDeps, t: Ms): void {
 /**
  * 总线参数更新（预览端据此同步实时音频图；无 setBus 的实现忽略）。
  * 过渡时长取相邻两次下发的帧间隔，预览端按同一线性曲线跟随，与离线混音一致。
+ *
+ * 这是「即时下发」通道：不写轨迹点、不改参数目标值，只把当前有效值交出去。
+ *
+ * @param state 引擎状态（下发时刻记在 `busFlushAt`）
+ * @param t 当前帧时刻（时间线毫秒）
+ * @returns 每条已登记总线的当前参数与本次过渡时长（毫秒，首帧为 0）
  */
 export function flushBusUpdates(state: TimelineState, t: Ms): BusUpdate[] {
   const rampMs = Math.max(0, t - (state.busFlushAt ?? t));
@@ -214,7 +279,18 @@ export function flushBusUpdates(state: TimelineState, t: Ms): BusUpdate[] {
   return out;
 }
 
-/** 运行期总线句柄：参数记录进轨迹（导出可复算），预览端即时生效 */
+/**
+ * 运行期总线句柄：参数记录进轨迹（导出可复算），预览端即时生效。
+ *
+ * 只能在回调内取得（时间线语义以回调时刻为生效点）。参数写入只改即时目标值，
+ * 轨迹点由帧末采样统一记录；分贝在写入前折算成线性幅度，声像夹到 -1..1。
+ * kill 带 fadeOut 时进入消亡窗口（窗口内继续出参数），否则立即静音。
+ *
+ * @param deps 求值依赖（状态 + 聚合器）
+ * @param id 总线标识
+ * @returns 总线句柄
+ * @throws RenderError（kind = spec_violation）回调外调用时
+ */
 export function makeBusHandle(deps: EvalDeps, id: BusId): BusHandle {
   const { state } = deps;
   if (!state.inCallback)
@@ -271,7 +347,14 @@ export function makeBusHandle(deps: EvalDeps, id: BusId): BusHandle {
   };
 }
 
-/** 运行期懒建/补登记总线（拓扑只能登记期定，这里只保证参数面存在） */
+/**
+ * 运行期懒建/补登记总线（拓扑只能登记期定，这里只保证参数面存在）。
+ *
+ * 参数面初值取自总线规格里的静态值（未给出则用缺省）；已存在时不覆盖。
+ *
+ * @param state 引擎状态
+ * @param id 总线标识
+ */
 export function ensureBusParams(state: TimelineState, id: BusId): void {
   if (!state.busParams.has(id)) state.busParams.set(id, paramsOf(state, id));
 }
@@ -280,6 +363,14 @@ export function ensureBusParams(state: TimelineState, id: BusId): void {
  * 构建整条音频图并校验拓扑：
  * - 未知父总线 / 未知发送与压制端点 → 回落 master（宽容，但记录）——不因一个拼写把整条声轨弄废；
  * - 成环（父链）→ spec_violation（无定义结果，必须显式报错）。
+ *
+ * 参数轨迹按时刻升序交出；总线自身的静态参数与运行期轨迹分开表达，
+ * 混音端先取规格静态值、再叠轨迹点。
+ *
+ * @param state 引擎状态（拓扑表 + 参数轨迹）
+ * @param sceneId 场景标识；当前不参与图构建，保留参数位
+ * @returns 整条音频图（总线、发送、压制、参数轨迹）
+ * @throws RenderError（kind = spec_violation）总线父总线指向自己或父链成环
  */
 export function buildAudioGraph(
   state: TimelineState,

@@ -8,17 +8,32 @@
 export interface RandomStream {
   /** [0,1) 均匀分布 */
   next(): number;
-  /** [min,max) 均匀分布的浮点数 */
+  /**
+   * [min,max) 均匀分布的浮点数。
+   * @param min 下界（含）
+   * @param max 上界（不含，须 > min）
+   */
   float(min: number, max: number): number;
-  /** [min,max) 均匀分布的整数；要求整数且 max > min */
+  /**
+   * [min,max) 均匀分布的整数；要求整数且 max > min。
+   * @param min 下界（含）
+   * @param max 上界（不含）
+   */
   int(min: number, max: number): number;
-  /** 以 probability（0..1）的概率为 true */
+  /**
+   * 以 probability（0..1）的概率为 true。
+   * @param probability 命中概率，0..1
+   */
   chance(probability: number): boolean;
-  /** 从非空数组里均匀取一项 */
+  /**
+   * 从非空数组里均匀取一项。
+   * @param items 非空数组
+   */
   pick<T>(items: readonly T[]): T;
   /**
    * 派生一条独立子流：同一 label 得到同一序列，且与父流已调用多少次无关。
    * 需要跟别的单元/别的用途互不干扰时用它，而不是共享一条流。
+   * @param label 子流标签：同名 = 同一条序列
    */
   fork(label: string): RandomStream;
 }

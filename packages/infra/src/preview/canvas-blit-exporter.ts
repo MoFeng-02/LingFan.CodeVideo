@@ -17,6 +17,7 @@ import type {
 import type { FrameCarrier, Ms } from "@lingfan-video/contracts";
 import { isFrameHandle } from "../frames/carrier";
 
+/** 装饰器参数 */
 export interface CanvasBlitExporterOptions {
   /** 贴帧的目标画布（预览舞台 / 调试画面） */
   readonly target: HTMLCanvasElement | OffscreenCanvas;
@@ -31,7 +32,9 @@ export interface CanvasBlitExporterOptions {
  * 若这里硬塞一个 writeAudio，组合根会误判成「有音轨出口但没给时钟」而拒绝推演。
  */
 export class CanvasBlitExporter implements Exporter {
+  /** 实现标识，原样照抄内层（预览路径通常是 `frames`） */
   readonly impl: ExporterImpl;
+  /** 产物格式标识，原样照抄内层 */
   readonly format: ExportFormat;
   /** 仅当内层接受音频块时存在 */
   readonly writeAudio?: (
@@ -39,9 +42,15 @@ export class CanvasBlitExporter implements Exporter {
     sampleRate: number,
     channels: number,
   ) => Promise<void>;
+  /** 目标画布的 2D 上下文；目标拿不到上下文时为 `null`（贴帧变成空操作） */
   private readonly target: CanvasRenderingContext2D | null;
+  /** 位图路径复用的临时 ImageData，尺寸变化时重建（避免每帧分配） */
   private staging: ImageData | null = null;
 
+  /**
+   * @param inner 被装饰的导出器：负责排帧、判停与产出结果，本节拍器不改变它的行为
+   * @param target 贴帧目标画布；内部只取一次 2D 上下文
+   */
   constructor(
     private readonly inner: Exporter,
     target: HTMLCanvasElement | OffscreenCanvas,
@@ -57,6 +66,15 @@ export class CanvasBlitExporter implements Exporter {
     }
   }
 
+  /**
+   * 先交给内层处理，再贴帧；内层抛错时也贴完再抛。
+   *
+   * 内层返回的 Promise 在这里被 await，所以排帧等待（背压）仍然生效，
+   * 贴帧只是同步追加的一步，不额外引入延迟。
+   *
+   * @param frame 本帧载体
+   * @param timestampMs 本帧时间戳（毫秒）
+   */
   async writeFrame(frame: FrameCarrier, timestampMs: Ms): Promise<void> {
     try {
       await this.inner.writeFrame(frame, timestampMs);
@@ -67,11 +85,18 @@ export class CanvasBlitExporter implements Exporter {
     this.present(frame);
   }
 
+  /** 收尾：直接转交内层，装饰器自己不产出产物 */
   finalize(): Promise<ExportResult> {
     return this.inner.finalize();
   }
 
+  /**
+   * 把一帧贴到目标画布（同步、不等待 GPU）。
+   *
+   * @param frame 待显示的帧；句柄走 `drawImage`，位图走 `putImageData`
+   */
   private present(frame: FrameCarrier): void {
+    /** 目标 2D 上下文；没有则整段跳过 */
     const g = this.target;
     if (!g) return;
     if (isFrameHandle(frame)) {
@@ -86,6 +111,7 @@ export class CanvasBlitExporter implements Exporter {
       return;
     }
     // 位图载体：把像素铺到目标画布（预览里通常只有一像素的占位，不做重活）
+    /** 位图路径的三个必需字段：RGBA 像素、宽、高（像素） */
     const { data, width, height } = frame;
     if (width <= 0 || height <= 0) return;
     if (
