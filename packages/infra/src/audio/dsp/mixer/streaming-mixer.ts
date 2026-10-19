@@ -6,7 +6,6 @@
  * 块尺寸只影响循环次数，不影响逐样本结果。
  */
 import type {
-  AudioGraph,
   AudioOp,
   AudioVoice,
   BusId,
@@ -15,112 +14,23 @@ import type {
   SendSpec,
 } from "@lingfan-video/contracts";
 import { MASTER_BUS } from "@lingfan-video/contracts";
-import { DuckUnit } from "./duck";
-import { createEffectUnits, type EffectUnit } from "./effects";
-import { makeAutomation, parentOf, topoOrder, type BusParams } from "./graph";
-import { panGain } from "./math";
-import type { ProgramVoice, VoicePcm } from "./types";
-import { layVoice, planVoice, type VoicePlan } from "./voice";
-
-/** 缺省块尺寸（帧）：128 帧在 48kHz 下约 2.7ms，与音频工作线程的渲染量子一致 */
-export const DEFAULT_BLOCK_FRAMES = 128;
-
-/**
- * 流式混音器的构造参数。
- *
- * 采样率、声道数、时长与总线拓扑在构造时定死，之后只允许运行期改参数（见 `setBusParams`）；
- * 改这些值必须重建实例。
- */
-export interface StreamingMixerOptions {
-  /** 输出采样率（Hz，须 > 0）；与源采样率不同时内核逐样本线性插值重采样 */
-  readonly sampleRate: number;
-  /** 输出声道数（交错缓冲的行宽）；恰为 2 时才做摆位，其余声道数摆位恒 1 */
-  readonly channels: number;
-  /** 总时间线时长（毫秒）：声音的硬终界，也是循环 `untilMs` 的上界 */
-  readonly durationMs: Ms;
-  /** 总线拓扑与参数轨迹；父链/发送/侧链成环时构造即抛 name="SpecViolation" */
-  readonly graph: AudioGraph;
-  /** 块尺寸（帧，缺省 `DEFAULT_BLOCK_FRAMES`，至少 1）；只影响循环次数，不影响逐样本结果 */
-  readonly blockFrames?: number;
-}
-
-/**
- * 整段渲染的输入：构造参数 + 全部声音。
- *
- * 只用于 `mixProgram`（导出端与测试）；预览端走 `StreamingMixer.addVoice` 逐条投递。
- */
-export interface MixProgramInput extends StreamingMixerOptions {
-  /** 参与混音的全部声音；顺序不影响结果（各声音独立叠加），后加入的逐样本相加 */
-  readonly voices: readonly ProgramVoice[];
-}
-
-/** 本块逐帧的自动化参数：每条总线一次求值，主循环与独奏判定只读 */
-interface BlockParams {
-  /** 逐帧线性增益 */
-  readonly gain: Float32Array;
-  /** 逐帧声像（-1..1） */
-  readonly pan: Float32Array;
-  /** 逐帧静音（1 = 静音） */
-  readonly mute: Uint8Array;
-  /** 逐帧独奏（1 = 独奏） */
-  readonly solo: Uint8Array;
-}
-
-/** 一条总线的运行期状态：块缓冲与效果链实例（缓冲每块复用，不逐块分配） */
-interface BusRuntime {
-  /** 总线 id */
-  readonly id: BusId;
-  /** 总线声明（静态参数与效果链规格） */
-  readonly spec: BusSpec;
-  /** 效果链实例，按声明顺序串联 */
-  readonly effects: EffectUnit[];
-  /** 处理后的块输出（长度 = blockFrames × channels） */
-  readonly out: Float32Array;
-}
-
-/** 挂在目标总线上的侧链压制：来源总线 + 有状态的压制单元 */
-interface DuckEntry {
-  /** 来源总线（其输出已在本块算好） */
-  readonly from: BusRuntime;
-  /** 压制单元（包络状态跨块保留） */
-  readonly unit: DuckUnit;
-}
-
-/** 一条已加入的声音：声明 + PCM + 目标总线 + 求值后的时间线计划 */
-interface VoiceEntry {
-  voice: AudioVoice;
-  pcm: VoicePcm;
-  /** 目标总线 id（未登记的总线在加入时退回 master） */
-  bus: BusId;
-  plan: VoicePlan;
-}
-
-/** 运行期改的静态参数：从 from 线性过渡到 to（不产生折点，只是覆盖同一段） */
-interface LiveRamp {
-  /** 起点值（改动时刻的当前有效值） */
-  from: number;
-  /** 目标值（增益已钳到 ≥ 0，声像已钳到 -1..1） */
-  to: number;
-  /** 过渡起点（全局毫秒） */
-  startMs: Ms;
-  /** 过渡时长（毫秒）；≤ 0 表示立即生效 */
-  rampMs: Ms;
-}
-
-/**
- * 求运行期过渡在某一时刻的值。
- *
- * @param ramp 过渡；未设置时直接返回 fallback（静态值）
- * @param ms 查询时刻（全局毫秒）
- * @param fallback 未设置过渡时的回退值
- * @returns 该时刻的参数值
- */
-function rampAt(ramp: LiveRamp | undefined, ms: Ms, fallback: number): number {
-  if (!ramp) return fallback;
-  if (ramp.rampMs <= 0) return ramp.to;
-  const k = Math.min(1, Math.max(0, (ms - ramp.startMs) / ramp.rampMs));
-  return ramp.from + (ramp.to - ramp.from) * k;
-}
+import { DuckUnit } from "../duck";
+import { createEffectUnits } from "../effects";
+import { makeAutomation, parentOf, topoOrder, type BusParams } from "../graph";
+import { panGain } from "../math";
+import type { ProgramVoice, VoicePcm } from "../types";
+import { layVoice, planVoice, type VoicePlan } from "../voice";
+import { blockParamsOf, rampAt, soloFlagsOf } from "./bus-params";
+import {
+  DEFAULT_BLOCK_FRAMES,
+  type BusParamsPatch,
+  type BusRuntime,
+  type DuckEntry,
+  type LiveRamp,
+  type SendTable,
+  type StreamingMixerOptions,
+  type VoiceEntry,
+} from "./types";
 
 /**
  * 流式混音器：每次 `renderBlock` 只算给定帧区间，状态跨块保留。
@@ -146,17 +56,14 @@ export class StreamingMixer {
   /** 每条总线的输入缓冲（本块内先清空，声音与发送叠加到此处） */
   private readonly inputs: Map<BusId, Float32Array>;
   /** 来源总线 → 发送列表 */
-  private readonly sends: Map<BusId, readonly SendSpec[]>;
+  private readonly sends: SendTable;
   /** 目标总线 → 侧链压制列表 */
   private readonly ducks: Map<BusId, readonly DuckEntry[]>;
   private readonly automation: Map<BusId, (ms: Ms) => BusParams>;
   private readonly voices: VoiceEntry[] = [];
   private readonly liveGain = new Map<BusId, LiveRamp>();
   private readonly livePan = new Map<BusId, LiveRamp>();
-  private busOverrides = new Map<
-    BusId,
-    { gain?: number; pan?: number; mute?: boolean; solo?: boolean }
-  >();
+  private busOverrides = new Map<BusId, BusParamsPatch>();
 
   /**
    * @param options 构造参数；采样率/声道数/时长/拓扑在此定死，块尺寸缺省 `DEFAULT_BLOCK_FRAMES`
@@ -250,12 +157,7 @@ export class StreamingMixer {
    * @param atMs 改动起点（全局毫秒）
    * @param rampMs 过渡时长（毫秒，缺省 0 = 立即）
    */
-  setBusParams(
-    id: BusId,
-    patch: { gain?: number; pan?: number; mute?: boolean; solo?: boolean },
-    atMs: Ms,
-    rampMs = 0,
-  ): void {
+  setBusParams(id: BusId, patch: BusParamsPatch, atMs: Ms, rampMs = 0): void {
     if (!this.buses.has(id)) return;
     /** 已有覆盖（合并后仍保留未给出的字段） */
     const current = this.busOverrides.get(id) ?? {};
@@ -381,39 +283,20 @@ export class StreamingMixer {
         layVoice(entry.plan, target, startFrame, frames, this.sampleRate, ch);
     }
     /** 本块逐帧自动化参数：每条总线只求值一次（查询游标只前进），主循环与独奏判定共用 */
-    const blockParams = new Map<BusId, BlockParams>();
-    for (const bus of this.order) {
-      const auto = this.automation.get(bus.id);
-      if (!auto) continue;
-      const gain = new Float32Array(frames);
-      const pan = new Float32Array(frames);
-      const mute = new Uint8Array(frames);
-      const solo = new Uint8Array(frames);
-      for (let fr = 0; fr < frames; fr++) {
-        const ms = ((startFrame + fr) * 1000) / this.sampleRate;
-        const p = auto(ms);
-        gain[fr] = p.gain;
-        pan[fr] = p.pan;
-        mute[fr] = p.mute ? 1 : 0;
-        solo[fr] = p.solo ? 1 : 0;
-      }
-      blockParams.set(bus.id, { gain, pan, mute, solo });
-    }
+    const blockParams = blockParamsOf(
+      this.order,
+      this.automation,
+      startFrame,
+      frames,
+      this.sampleRate,
+    );
     /** 逐帧是否存在独奏：静态声明、运行期覆盖与自动化折点都算，逐帧变化 */
-    const soloFlags = new Uint8Array(frames);
-    for (let fr = 0; fr < frames; fr++) {
-      for (const bus of this.order) {
-        if (bus.id === MASTER_BUS) continue;
-        const patch = this.busOverrides.get(bus.id) ?? {};
-        const p = blockParams.get(bus.id);
-        const solo =
-          patch.solo ?? (p ? p.solo[fr] === 1 : (bus.spec.solo ?? false));
-        if (solo) {
-          soloFlags[fr] = 1;
-          break;
-        }
-      }
-    }
+    const soloFlags = soloFlagsOf(
+      this.order,
+      blockParams,
+      this.busOverrides,
+      frames,
+    );
     for (const bus of this.order) {
       /** 本总线输入：效果链就地处理 */
       const sig = this.inputs.get(bus.id)!;
@@ -474,31 +357,4 @@ export class StreamingMixer {
       if (bus.id === MASTER_BUS) out.set(target.subarray(0, span));
     }
   }
-}
-
-/**
- * 整段渲染：建一个内核、按块循环写完输出缓冲（导出端与测试用）。
- *
- * 输出帧数 = ceil(durationMs / 1000 × sampleRate)（至少 1 帧），布局为交错立体声/多声道；
- * 与预览端逐块渲染共用同一内核，因此两端结果逐样本一致。
- *
- * @param input 构造参数 + 全部声音
- * @returns 交错样本（长度 = 帧数 × 声道数）
- */
-export function mixProgram(input: MixProgramInput): Float32Array {
-  const ch = input.channels;
-  /** 输出总帧数（至少 1 帧） */
-  const frames = Math.max(
-    1,
-    Math.ceil((input.durationMs / 1000) * input.sampleRate),
-  );
-  const blockFrames = Math.max(1, input.blockFrames ?? DEFAULT_BLOCK_FRAMES);
-  const mixer = new StreamingMixer({ ...input, blockFrames });
-  for (const voice of input.voices) mixer.addVoice(voice);
-  const out = new Float32Array(frames * ch);
-  for (let start = 0; start < frames; start += blockFrames) {
-    const n = Math.min(blockFrames, frames - start);
-    mixer.renderBlock(start, n, out.subarray(start * ch, (start + n) * ch));
-  }
-  return out;
 }
