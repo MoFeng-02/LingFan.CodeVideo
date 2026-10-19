@@ -117,11 +117,4 @@ export function shortCode(code: string): string {
   return table[code] ?? code;
 }
 
-/** 把毫秒摆到刻度尺上；总长由引擎给（`state.totalTime`），不由剧本预设 */
-export function rulerX(ms: Ms, totalTime: Ms): number {
-  const span = RULER.x1 - RULER.x0;
-  if (!(totalTime > 0)) return RULER.x0;
-  return RULER.x0 + (span * ms) / totalTime;
-}
-
 /** 落版的淡出：末段里从 out 起收 */

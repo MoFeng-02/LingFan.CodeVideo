@@ -17,7 +17,6 @@ import {
   makeHarness,
   type FakeAudioBuffer,
   type Harness,
-  type ParamEvent,
 } from "./audio-harness";
 
 export const SR = 48_000;
@@ -44,59 +43,6 @@ export async function previewBus(
   await out.begin({ durationMs, voices, graph } as AudioProgram);
   await flush();
   return h;
-}
-
-export function gainById(h: Harness, id: number) {
-  const found = h.gains.find((g) => g.id === id);
-  if (!found) throw new Error(`未找到增益节点 ${id}`);
-  return found;
-}
-
-/** 定位延迟块：反馈增益既读延迟节点又送回延迟节点，湿声与干声在合并点汇合 */
-export function delayBlock(h: Harness) {
-  const delay = h.delays[0];
-  if (!delay) throw new Error("预览端没有建延迟节点");
-  const out = h.outputsOf(delay.id).filter((id) => h.kindOf(id) === "gain");
-  const fbId = out.find((id) => h.outputsOf(id).includes(delay.id));
-  const wetId = out.find((id) => id !== fbId);
-  if (fbId === undefined || wetId === undefined)
-    throw new Error("延迟块缺少反馈或湿声增益");
-  const mergeId = h.outputsOf(wetId).find((id) => h.kindOf(id) === "gain");
-  if (mergeId === undefined) throw new Error("延迟块缺少汇合点");
-  const dryId = h
-    .inputsOf(mergeId)
-    .find((id) => h.kindOf(id) === "gain" && id !== wetId);
-  if (dryId === undefined) throw new Error("延迟块缺少干声增益");
-  return {
-    delay,
-    fb: gainById(h, fbId),
-    wet: gainById(h, wetId),
-    dry: gainById(h, dryId),
-    merge: gainById(h, mergeId),
-  };
-}
-
-/** 定位混响块：卷积节点只接湿声，干声与湿声在合并点汇合 */
-export function reverbBlock(h: Harness) {
-  const conv = h.convolvers[0];
-  if (!conv) throw new Error("预览端没有建卷积节点");
-  const wetId = h.outputsOf(conv.id).find((id) => h.kindOf(id) === "gain");
-  const mergeId =
-    wetId === undefined
-      ? undefined
-      : h.outputsOf(wetId).find((id) => h.kindOf(id) === "gain");
-  if (wetId === undefined || mergeId === undefined)
-    throw new Error("混响块缺少湿声或汇合点");
-  const dryId = h
-    .inputsOf(mergeId)
-    .find((id) => h.kindOf(id) === "gain" && id !== wetId);
-  if (dryId === undefined) throw new Error("混响块缺少干声增益");
-  return {
-    conv,
-    wet: gainById(h, wetId),
-    dry: gainById(h, dryId),
-    merge: gainById(h, mergeId),
-  };
 }
 
 /**
@@ -204,12 +150,6 @@ export function zeroCrossRate(
     if ((a < 0 && b >= 0) || (a >= 0 && b < 0)) crossings++;
   }
   return (crossings * SR) / (2 * (to - from));
-}
-
-export function lastEvent(
-  events: readonly ParamEvent[],
-): ParamEvent | undefined {
-  return events[events.length - 1];
 }
 
 export function synthVoice(

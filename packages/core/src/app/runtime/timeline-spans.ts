@@ -37,17 +37,6 @@ export function overlapOffset(
 }
 
 /**
- * span 活跃判定：t 落在 [start,end) 内（重叠窗内可能有多段同时活跃）。
- *
- * @param spans 按链上顺序排列的段窗口
- * @param t 时间线全局时刻（毫秒）
- * @returns 第一个活跃段；没有则 `undefined`
- */
-export function findSpan(spans: ChainSpan[], t: Ms): ChainSpan | undefined {
-  return spans.find((s) => t >= s.start && t < s.end);
-}
-
-/**
  * 全部活跃 span，按链上顺序返回（重叠窗内两段都在，后者后绘制）。
  *
  * @param spans 按链上顺序排列的段窗口

@@ -6,8 +6,6 @@
  * 它检验的不是光栅结果，而是**绘制输入的确定性**：
  * 只要剧本里混进 Math.random、Date.now 或与调用顺序相关的隐式状态，指纹立刻分叉。
  */
-import type { FrameBitmap } from "@lingfan-video/contracts";
-
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
@@ -162,10 +160,3 @@ export function makeRecordingCanvas(
     calls: () => calls,
   };
 }
-
-/** 全 0 位图（`frames: "allow-blank"` 下引擎给的就是它，这里只做类型占位）。 */
-export const blankFrame = (w: number, h: number): FrameBitmap => ({
-  data: new Uint8ClampedArray(w * h * 4),
-  width: w,
-  height: h,
-});
