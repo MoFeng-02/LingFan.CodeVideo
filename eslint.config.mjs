@@ -15,7 +15,7 @@ const typedSources = [
 
 export default [
   {
-    ignores: ["**/dist/**", "**/node_modules/**"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/.vitepress/cache/**"],
   },
   {
     files: typedSources,

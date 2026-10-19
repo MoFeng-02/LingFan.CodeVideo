@@ -1,0 +1,94 @@
+/**
+ * 文档站品牌样式：建立在 VitePress 默认主题的 CSS 变量之上，
+ * 只覆盖品牌色与演示组件需要的局部变量；不做全局重排。
+ *
+ * 品牌色取自演示片的视觉体系（#4d6bfe 系）。
+ */
+
+:root {
+  --cv-brand: #4d6bfe;
+  --cv-brand-soft: rgba(77, 107, 254, 0.14);
+  --cv-ink: #1a2233;
+  --cv-track: #e8ecf5;
+}
+
+.dark {
+  --cv-brand-soft: rgba(77, 107, 254, 0.24);
+  --cv-ink: #e7ecf6;
+  --cv-track: #232a3a;
+}
+
+/* 演示组件外框：所有 demo 共用的容器观感 */
+.cv-demo {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+  background: var(--vp-c-bg-soft);
+}
+
+.cv-demo canvas {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  background: #0b1020;
+}
+
+.cv-demo-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.cv-demo-note {
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
+.cv-demo button {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  padding: 4px 14px;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.cv-demo button:hover {
+  border-color: var(--cv-brand);
+  color: var(--cv-brand);
+}
+
+.cv-demo input[type="range"] {
+  accent-color: var(--cv-brand);
+  flex: 1;
+}
+
+/* 幕段链进度条（HeroEngine） */
+.cv-chain {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--cv-track);
+}
+
+.cv-chain-seg {
+  position: relative;
+  height: 100%;
+}
+
+.cv-chain-seg + .cv-chain-seg {
+  border-left: 2px solid var(--vp-c-bg);
+}
+
+.cv-chain-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: var(--cv-brand);
+  opacity: 0.85;
+}
