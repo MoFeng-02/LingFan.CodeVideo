@@ -7,7 +7,7 @@ metadata:
 
 # 验证与调试
 
-验证分三层：**结构**（`validate` 干跑，不产一帧）、**取样**（`compute` 拿某刻的状态，不产位图）、**像素**（指纹与差分量，不整片出片）。判据是**可计算的数字**，「看起来对」不算验证。
+验证分三层：**结构**（`validate` 干跑，不产一帧）、**取样**（`compute` 拿某刻的状态，不产位图）、**像素**（指纹与差分量，不整片出片）。判据是**可计算的数字**，「看起来对」不算验证。验证也不依赖整片推演：取样只开需要的时间窗，能单测的纯函数直接单测。
 
 ## 何时用 / 何时不用
 
@@ -40,6 +40,7 @@ metadata:
 5. **确定性判据是帧指纹序列，不是容器字节**。mp4 的字节受封装器版本与时间戳影响，哈希比对必然假阴性。
 6. **`auditDeterminism` 的 `produce` 会被调用两次**。它必须是可重入的纯产帧函数，不能持有累积状态。
 7. **确定性是分级的**：CPU 2D 路径承诺跨设备逐字节相同；GPU 与第三方框架只承诺同设备、同代码、同数据相同。
+8. **验证按需开窗，不跑全片**。`computeRange` 只传关心的区间：关心 800–1200ms 的过场就 `(scene, 800, 1_200)`，不要从 0 扫到尾。时间换算、音频组合子、`validate` 这类纯函数不建引擎，测试直接 import 调用断言。
 
 ## 骨架
 
@@ -56,7 +57,7 @@ if (errors.length > 0) console.log(errors.map((e) => `${e.path} ${e.code}`));
 
 // 2) 取样：不产位图，只看状态
 const at = await compute.computeAt(scene, 1_200);          // 毫秒；无活跃单元时 undefined
-const range = await compute.computeRange(scene, 0, 3_000); // [0, 3000) 内的全部网格点
+const range = await compute.computeRange(scene, 900, 1_400); // 只开关心的窗：[900, 1400) 的网格点
 
 // 3) 像素：拿一帧的指纹
 const fingerprint = frameFingerprint(bitmap);              // 16 位小写十六进制
@@ -73,11 +74,12 @@ if (!verdict.identical) console.log(verdict.mismatches); // 第一处不同 + �
 
 - 旁路哈希：把 `new FrameHasher(downstream)` 当普通 `FrameSink` 传进 `render`，它逐帧记指纹并原样转发，不缓存像素。
 - 早停：`render` 的 `onProgress(done, total)` 拿到进度即可中断，不必等整片跑完。
+- 直接单测：时间换算（`timestampAt` / `msToFrames` / `frameCount`）、音频组合子、`validate` 都是纯函数，测试文件直接 import 断言，一个引擎都不用建。
 
 ## 验证判据
 
 ```bash
-pnpm test:unit                                        # 全量
+# 只跑与改动相关的那个文件，不全量跑
 pnpm vitest run tests/frame-diagnostics.test.ts       # 指纹 / 差分 / 连贯性 / 两遍比对
 pnpm vitest run tests/validate-pool.test.ts           # 干跑检查
 pnpm vitest run tests/ledger-timeline.test.ts         # 不建引擎的 fn 单测与同一刻求两次相等
@@ -107,6 +109,7 @@ pnpm vitest run tests/ledger-timeline.test.ts         # 不建引擎的 fn 单�
 | 指纹比对时混用不同尺寸的帧 | 尺寸先于像素参与散列 | 比对前先对齐尺寸，或用 `frameDelta` 的尺寸校验兜底 |
 | `auditDeterminism` 的 `produce` 里复用同一块可变画布 | 两遍会读到互相污染的像素 | 每次 `produce` 都新建画布或先清空 |
 | 用 GPU 路径的指纹做跨机器断言 | GPU 只承诺同设备相同 | 跨设备断言只对 CPU 2D 路径成立 |
+| 验证一个改动就整片 `render` 或全量跑测试 | 全片与全量都是慢路径；这套库本身可被单测 | 只跑相关测试文件；取样用窄窗 `computeRange`，纯函数直接断言 |
 
 ## 边界与陷阱
 
