@@ -20,6 +20,6 @@ export function buildAudioProgram(state: TimelineState): AudioProgram {
   return {
     durationMs: state.timelineEnd,
     voices: state.audioVoices,
-    graph: buildAudioGraph(state, "timeline"),
+    graph: buildAudioGraph(state),
   };
 }

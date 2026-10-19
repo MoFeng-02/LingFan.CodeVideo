@@ -33,11 +33,9 @@ import { disposeUnit } from "../spawn-handle";
  * 无论是否给 spec 都保证该总线的参数面存在，以便回调马上改参数。
  *
  * @param deps 求值依赖（读写引擎状态）
- * @param t 当前求值时刻（毫秒）；句柄操作本身取 `state.nowMs`，此参数保留给调用方对齐
  * @returns AudioGraphEnv：`bus` / `send` / `duck`
  */
-export function graphOf(deps: EvalDeps, t: Ms): AudioGraphEnv {
-  void t;
+export function graphOf(deps: EvalDeps): AudioGraphEnv {
   return {
     bus: (id, spec) => {
       if (spec) ensureBusSpec(deps.state, id, spec);

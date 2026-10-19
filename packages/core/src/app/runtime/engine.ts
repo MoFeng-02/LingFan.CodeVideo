@@ -233,7 +233,7 @@ export class TimelineEngine {
       durationMs: this.state.timelineEnd,
       lastState: this.aggregator.full(),
       audioVoices: this.state.audioVoices,
-      audioGraph: buildAudioGraph(this.state, "timeline"),
+      audioGraph: buildAudioGraph(this.state),
     };
   }
 

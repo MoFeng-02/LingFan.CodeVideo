@@ -368,14 +368,10 @@ export function ensureBusParams(state: TimelineState, id: BusId): void {
  * 混音端先取规格静态值、再叠轨迹点。
  *
  * @param state 引擎状态（拓扑表 + 参数轨迹）
- * @param sceneId 场景标识；当前不参与图构建，保留参数位
  * @returns 整条音频图（总线、发送、压制、参数轨迹）
  * @throws RenderError（kind = spec_violation）总线父总线指向自己或父链成环
  */
-export function buildAudioGraph(
-  state: TimelineState,
-  sceneId: string,
-): AudioGraph {
+export function buildAudioGraph(state: TimelineState): AudioGraph {
   const buses: BusSpec[] = [];
   const declared = new Set<string>([MASTER_BUS, ...state.busSpecs.keys()]);
   const resolve = (id: BusId): BusId => (declared.has(id) ? id : MASTER_BUS);
@@ -420,6 +416,5 @@ export function buildAudioGraph(
     const sorted = [...points].sort((a, b) => a.atMs - b.atMs);
     automation.push({ bus, points: sorted });
   }
-  void sceneId;
   return { buses, sends, ducks, automation };
 }
