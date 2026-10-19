@@ -35,12 +35,16 @@ export interface Handle {
 export interface Scheduler {
   /**
    * 按句柄或名字杀死目标。
+   * 目标不存在时静默返回（拼错 key 不会报错）：消杀是幂等操作，
+   * 「已经死了」与「从来没有过」在时间线上不可区分。
    * @param handleOrKey spawn 句柄，或 spawn 链的 key、step/loop 单元的 id
    * @param options 缺省立即出池；给 fadeOut 则进入消亡窗口
    */
   kill(handleOrKey: Handle | string, options?: KillOptions): void;
   /**
-   * 杀死全部活跃单元（含 spawn 实例）。
+   * 杀死全部活跃的 spawn 实例。
+   * 主链（`Scene` 链本身及其 step/loop 单元）不受影响——它们只能按 id 逐个消杀，
+   * 否则一次调用就会让余下时间线不再产帧。
    * @param options 缺省立即出池；给 fadeOut 则全部进入同一消亡窗口
    */
   killAll(options?: KillOptions): void;

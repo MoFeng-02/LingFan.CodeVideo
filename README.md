@@ -2,8 +2,8 @@
 
 > 视频不是文件，是一个跑 N 毫秒的自动游戏。
 
-确定性视频引擎库：剧本 DSL 登记节点 → 双池时间线（总毫秒池 / 帧窗池）→ 确定性模拟 → 帧捕获 → 编码导出。
-「游戏即视频」——同一份剧本，每次渲染得到逐帧相同的结果；LLM 是第一用户。
+确定性推演式视频引擎：剧本 DSL 登记节点 → 双池时间线（总毫秒池 / 帧窗池）→ 确定性模拟 → 帧捕获 → 音频铺轨 → 导出。
+同一份剧本，每次推演逐帧相同。**总时长是编译产物，不是设计参数**；LLM 是第一用户，所以 API 对歧义是零容忍的。
 
 ## 30 秒上手
 
@@ -14,36 +14,53 @@ pnpm test:unit        # 单元测试（tests/）
 pnpm dev              # 浏览器实时预览：Vite dev server 打开 examples/browser
 ```
 
-Node 侧最小示例（完整版见 `examples/three-acts.ts`）：
+Node 侧最小示例（完整版见 `examples/three-acts/main.ts`，浏览器版见 `examples/minimal/main.ts`）：
 
 ```ts
 import { render, start } from "@lingfan-video/core";
 import { FrameSequenceExporter } from "@lingfan-video/infra";
 
+// 登记期：只声明节点与窗口，不执行任何画面
 const scene = start(1000, (env) => {
-  env.step(1000, (ctx) => {
-    const g = (ctx.canvas as HTMLCanvasElement).getContext("2d")!;
-    g.fillRect(ctx.t / 4, 0, 40, 40); // 同一 t 必然同一画面
-  });
+  env.step(1000, (ctx) => ({ t: ctx.localT })); // 返回值 = 本幕 body，传给下一幕
 });
 
-await render(scene, {
+// 推演期：按注册顺序逐帧求值并交出帧
+const { frames, durationMs } = await render(scene, {
   fps: 30,
   width: 640,
   height: 360,
   headless: true,
+  frames: "allow-blank", // 未注入 painter 时显式接受占位位图（真实像素路径见下）
   exporter: new FrameSequenceExporter(),
 });
 ```
 
+帧像素的唯一来源是绘制目标本身：注入 `painter` 由宿主自绘，或给一个能 `getContext("2d")` 的 `canvas` 走回读。两者都没有时 `render` 直接报 `spec_violation`，不会静默交出空白帧——`frames: "allow-blank"` 只是显式确认「本次不需要真实像素」。细节见 [`docs/contracts/capture.md`](docs/contracts/capture.md)。
+
+## 文档
+
+| 想知道什么 | 读哪里 |
+| --- | --- |
+| 这东西到底是什么、怎么运作 | [`docs/mental-model.md`](docs/mental-model.md) |
+| 按当前任务找页面 | [`docs/README.md`](docs/README.md) |
+| 写剧本 / 拼多幕 / 加声音 / 出 mp4 / 不整片验证 | [`docs/guides/`](docs/guides/first-clip.md) |
+| 某个类型或端口的语义承诺 | [`docs/contracts/`](docs/contracts/index.md) |
+| 代码没报错但「不太对」 | [`docs/pitfalls.md`](docs/pitfalls.md) |
+| 术语的准确含义 | [`docs/glossary.md`](docs/glossary.md) |
+
+给 AI 编码工具的入口是 [`.agents/skills/codevideo/SKILL.md`](.agents/skills/codevideo/SKILL.md)：它只做路由，按任务分发到 `codevideo-scene` / `codevideo-schedule` / `codevideo-audio` / `codevideo-export` / `codevideo-verify` 五个模块 skill；每个模块 skill 自包含地给出 API 用法、组合方式与验证判据，不依赖 `docs/`。
+
 ## 仓库结构
 
 ```
-packages/contracts   九域契约（零实现：类型 + 语义承诺注释）
-packages/core        域层（compiler / validator / 时间层）+ 引擎 + 组合根（render / compute / validateScene）
-packages/infra       契约的适配器实现（帧序列导出、WebCodecs MP4、离线混音、WebAudio 预览、内存捕获）
+packages/contracts   契约层（零实现依赖：类型 + 语义承诺）
+packages/core        纯域层（编译 / 校验 / 时间数学）+ 引擎运行时 + 组合根
+packages/infra       契约的默认适配器（帧序列、WebCodecs mp4、离线混音、WebAudio 预览、诊断）
 examples/            消费端示范（Node 脚本 + 浏览器实时预览），不是包
-tests/               集中式单元/端到端测试，不是包
+tests/               集中式单元 / 端到端测试，不是包
+docs/                公开文档（判据式：断言、反例、钉子）
+.agents/skills/      给 AI 编码工具的模块化 skill
 ```
 
 ## 关键语义速览
@@ -68,3 +85,12 @@ tests/               集中式单元/端到端测试，不是包
 - **导出 mp4 自带音轨**：`WebCodecsExporter` 用 H.264 + AAC-LC 编码并自封装 mp4，声音走 `OfflineAudioMixer`（与预览同一份合成公式/求值点）；组合根顺序是「帧 → 声 → finalize」，有声音却没音轨出口会直接 `spec_violation`，不静默丢声。浏览器示例点「导出 MP4」即可下载（`pnpm dev`）。
 - **预览用音频时钟做主时钟**：`PacedPreviewExporter`（infra）按 `WebAudioOutput.nowMs()` 排帧——首次创建 AudioContext 时其时钟可能冷启动数秒，画面若跟墙钟就会「画面放完声音还在响」；无音频时钟或时钟停滞时自动退回墙钟，预览不会卡死。
 - **终界只有一个**：总时间线结束即全停——末帧落在最后一个采样网格点、覆盖到终点后画面保留（之后无帧、无定时器），音频（含 `loop`）只在到终点的剩余时长内发声；导出端由缓冲长度裁齐，预览端显式排 `stop`。
+
+## 门禁与提交
+
+```bash
+pnpm lint        # typecheck + format:check + eslint（唯一门禁口径）
+pnpm test:unit   # vitest run
+```
+
+`docs/**/*.md` 与 `.agents/**/*.md` 不在 prettier 格式化范围内。
