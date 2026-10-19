@@ -18,8 +18,8 @@
  * 可选后端，不经这里。
  */
 export { FrameSequenceExporter } from "./export/frame-sequence-exporter";
-export { WebCodecsExporter } from "./export/webcodecs-exporter";
-export type { WebCodecsExporterOptions } from "./export/webcodecs-exporter";
+export { WebCodecsExporter } from "./export/webcodecs";
+export type { WebCodecsExporterOptions } from "./export/webcodecs";
 export { Mp4Muxer } from "./export/mp4";
 export type {
   AudioChunkSpec,
