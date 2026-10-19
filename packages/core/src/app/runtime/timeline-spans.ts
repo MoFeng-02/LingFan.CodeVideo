@@ -77,24 +77,3 @@ export function findSpansLooping(chain: SpawnChain, t: Ms): ChainSpan[] {
   const local = (t - chain.start) % contentLen;
   return findSpans(chain.spans, chain.start + local);
 }
-
-/**
- * forever 链 span 查找：t 超出内容总长后按链内容时长取模回卷（循环重放）。
- *
- * @param chain spawn 链
- * @param t 时间线全局时刻（毫秒）
- * @returns 回卷后的活跃段；链无内容（或内容长度非正）时 `undefined`
- */
-export function findSpanLooping(
-  chain: SpawnChain,
-  t: Ms,
-): ChainSpan | undefined {
-  const span = findSpan(chain.spans, t);
-  if (span) return span;
-  const last = chain.spans[chain.spans.length - 1];
-  if (!last) return undefined;
-  const contentLen = last.end - chain.start;
-  if (!(contentLen > 0)) return undefined;
-  const local = (t - chain.start) % contentLen;
-  return findSpan(chain.spans, chain.start + local);
-}

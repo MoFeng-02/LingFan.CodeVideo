@@ -185,9 +185,6 @@ export interface AudioGraph {
   readonly automation: readonly BusAutomation[];
 }
 
-/** 累计发送的自增计数（预览端不还原 sends，导出端全量参与） */
-export type BusSendCount = number;
-
 /**
  * 运行期总线句柄：回调内改参数、按名字持有时长。
  * kill 支持 fadeOut 窗口——窗口内参数继续被求值，窗口结束后失效。

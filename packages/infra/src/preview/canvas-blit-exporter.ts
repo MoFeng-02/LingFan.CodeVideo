@@ -17,12 +17,6 @@ import type {
 import type { FrameCarrier, Ms } from "@lingfan-video/contracts";
 import { isFrameHandle } from "../frames/carrier";
 
-/** 装饰器参数 */
-export interface CanvasBlitExporterOptions {
-  /** 贴帧的目标画布（预览舞台 / 调试画面） */
-  readonly target: HTMLCanvasElement | OffscreenCanvas;
-}
-
 /**
  * 语义：**先让内核排帧/判停，再把这一帧贴到目标画布**。
  * 内核抛错（例如定格命中）时也要先贴，否则停住的画面会是上一帧。
