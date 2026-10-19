@@ -22,8 +22,8 @@ import type {
   Scene,
   ValidateFn,
 } from "@lingfan-video/contracts";
-import { validate } from "./domain/validation";
-import type { SceneInternal } from "./domain/simulation/types";
+import { validate } from "./domain";
+import type { SceneInternal } from "./domain";
 import { TimelineEngine, type EngineOptions } from "./app/runtime";
 
 /** 结构化渲染错误工厂（契约错误类型 RenderError 的唯一构造入口） */
@@ -33,24 +33,19 @@ export { TimelineEngine } from "./app/runtime/engine";
 /** 声明式输入轨道工厂（事件表校验 + 逐帧快照；预览与导出共用同一份数据） */
 export { createInputTrack } from "./app/runtime/input";
 /** 确定性随机流工厂（同种子同步数必同序列；子流用 fork(label) 派生） */
-export { createRandomStream } from "./domain/random/stream";
+export { createRandomStream } from "./domain/random";
 /** 引擎装配参数与推演摘要（注入面与结果面） */
 export type { EngineOptions, RunSummary } from "./app/runtime/engine-types";
 /** 剧本静态校验：返回校验错误表，不抛异常 */
-export { validate } from "./domain/validation";
+export { validate } from "./domain";
 /** 帧号 ↔ 毫秒（逐帧乘法，禁累加） */
-export {
-  timestampAt,
-  msToFrames,
-  framesToMs,
-  frameCount,
-} from "./domain/time-math/time-math";
+export { timestampAt, msToFrames, framesToMs, frameCount } from "./domain";
 /** 节拍网格与每拍毫秒数（音乐时长换算） */
-export { beatGrid, msPerBeat } from "./domain/time-math/beats";
+export { beatGrid, msPerBeat } from "./domain";
 /** 过场遮盖进度（0..1 纯函数）：绝对时刻 → 遮盖量；出幕用返回值、入幕用 1 − 返回值 */
-export { coverProgress } from "./domain/time-math/cover";
+export { coverProgress } from "./domain";
 /** 池账本：主链/loop 占用的总毫秒池（编译期时间语义的账本） */
-export { poolOf, loopPool } from "./domain/simulation/types";
+export { poolOf, loopPool } from "./domain";
 /** 音频组合子：能力即上下文的「写法糖」（构造期强类型校验） */
 export {
   clip,
@@ -65,7 +60,7 @@ export {
   warp,
 } from "./domain/audio";
 /** 场景内部形态与节点联合：自己写编译/调度扩展时才需要直接面对它们 */
-export type { SceneInternal, SimNode } from "./domain/simulation/types";
+export type { SceneInternal, SimNode } from "./domain";
 
 /** 预览/导出通用装配：建引擎 + 装 CPU 位图来源（框架自绘由注入 painter 承载） */
 function assemble(opts: RenderOptions): {
@@ -400,8 +395,8 @@ function makeDefaultAssets(): import("@lingfan-video/contracts").AssetSource {
 }
 
 /** 便利重导出：start（StartFn 三重载）从 dsl 出；三种形态的差别见 StartFn 契约 */
-export { startScene as start } from "./domain/simulation/dsl";
+export { startScene as start } from "./domain";
 /** 剧本入口的启动规格（窗口 + setup + run） */
-export type { StartSpec } from "./domain/simulation/dsl";
+export type { StartSpec } from "./domain";
 /** 建场景（段窗口长度 + 登记体 + 可选 setup）；id 由调用序号自动生成 */
-export { createScene } from "./domain/simulation/dsl";
+export { createScene } from "./domain";
