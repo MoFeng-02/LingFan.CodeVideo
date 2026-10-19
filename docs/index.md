@@ -6,21 +6,29 @@ aside: false
 
 <div class="cv-landing">
 
+<div class="cv-hero-head">
+
 # 画面是时间的函数
 
 **LingFan CodeVideo** 是一个确定性推演式视频引擎：视频不是文件，是一个跑 N 毫秒的自动游戏。画面是时间 t 的确定性函数——同一份剧本，每次推演逐帧相同；总时长是编译产物，不是设计参数。
 
+</div>
+
 <HeroEngine />
 
-这段画面由一份三幕剧本实时推演：幕间 `transitionTo` 重叠 150ms，总时长 1700ms = 600 + 800 + 600 − 2 × 150，由链编译得出。多看两遍——逐帧相同。
+<p class="cv-caption">这段画面由一份三幕剧本实时推演：幕间 <code>transitionTo</code> 重叠 150ms，总时长 1700ms = 600 + 800 + 600 − 2 × 150，由链编译得出。多看两遍——逐帧相同。</p>
 
-[心智模型](/mental-model) · [第一段画面](/guides/first-clip) · [契约总览](/contracts/index) · [常见错法](/pitfalls)
+<div class="cv-links">
+
+[心智模型](/mental-model){.cv-pill} [第一段画面](/guides/first-clip){.cv-pill} [契约总览](/contracts/index){.cv-pill} [常见错法](/pitfalls){.cv-pill}
 
 </div>
 
 ## 验证不必出片
 
-出片之前就能验证：`validate` 干跑登记体检查结构；`compute.computeAt` / `compute.computeRange` 用 headless 引擎按需开窗取样，只取需要的时间区；帧指纹比对两次推演是否逐帧一致。下面是 compute 取样的活演示——曲线是 `computeRange` 取回的状态点连成的线，表格是 `computeAt` 取回的选中点状态表：
+出片之前就能验证：`validate` 干跑登记体检查结构；`compute.computeAt` / `compute.computeRange` 用 headless 引擎按需开窗取样，只取需要的时间区；帧指纹比对两次推演是否逐帧一致。
+
+下面是 compute 取样的活演示——曲线是 `computeRange` 取回的状态点连成的线，表格是 `computeAt` 取回的选中点状态表：
 
 <TimeProbe />
 
@@ -63,23 +71,77 @@ await render(scene, {
 | 查某条契约的准确语义与判据 | [契约总览](/contracts/index) |
 | 对照常见写法错误 | [常见错法](/pitfalls) |
 
+</div>
+
 <style>
 .cv-landing {
-  padding-top: 32px;
+  max-width: 1128px;
+  margin: 0 auto;
+  padding: 24px 24px 72px;
 }
-.cv-landing h1 {
+.cv-hero-head {
   text-align: center;
-  margin-bottom: 12px;
+  padding: 16px 0 8px;
 }
-.cv-landing > p:nth-of-type(1) {
-  text-align: center;
-  max-width: 40em;
-  margin-left: auto;
-  margin-right: auto;
-  opacity: 0.9;
+.cv-hero-head h1 {
+  font-size: 40px;
+  border-top: none;
+  margin-bottom: 16px;
 }
-.cv-landing > p:nth-of-type(3) {
+.cv-hero-head p {
+  max-width: 46em;
+  margin: 0 auto;
+  font-size: 16px;
+  opacity: 0.92;
+}
+.cv-caption {
   text-align: center;
   font-size: 14px;
+  color: var(--vp-c-text-2);
+  max-width: 46em;
+  margin: 16px auto 0;
+}
+.cv-links {
+  text-align: center;
+  margin: 20px 0 8px;
+}
+.cv-pill {
+  display: inline-block;
+  margin: 4px 6px;
+  padding: 5px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: border-color 0.2s, color 0.2s;
+}
+.cv-pill:hover {
+  border-color: var(--cv-brand);
+  color: var(--cv-brand);
+}
+.cv-landing h2 {
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--vp-c-divider);
+  font-size: 26px;
+}
+.cv-landing table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+.cv-landing th,
+.cv-landing td {
+  border: 1px solid var(--vp-c-divider);
+  padding: 8px 16px;
+  text-align: left;
+}
+.cv-landing th {
+  background: var(--vp-c-bg-soft);
+  font-size: 14px;
+}
+.cv-landing td a {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
 }
 </style>

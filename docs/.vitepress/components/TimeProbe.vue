@@ -100,8 +100,8 @@ onMounted(() => void refresh());
 
 <template>
   <div class="cv-demo">
-    <canvas ref="wave" width="640" height="140"></canvas>
-    <canvas ref="probe" width="640" height="24"></canvas>
+    <canvas ref="wave" width="1152" height="220"></canvas>
+    <canvas ref="probe" width="1152" height="32"></canvas>
     <div class="cv-demo-row">
       <input v-model.number="slider" type="range" min="0" :max="gridTimes.length - 1" step="1" @input="refresh" />
       <span class="cv-demo-note">{{ (gridTimes[slider] ?? 0).toFixed(1) }}ms</span>
@@ -123,6 +123,12 @@ onMounted(() => void refresh());
 </template>
 
 <style scoped>
+canvas:first-of-type {
+  border-radius: 8px 8px 0 0;
+}
+canvas:last-of-type {
+  border-radius: 0 0 8px 8px;
+}
 .cv-table {
   width: 100%;
   border-collapse: collapse;

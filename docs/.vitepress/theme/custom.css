@@ -29,9 +29,19 @@
 
 .cv-demo canvas {
   display: block;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
   border-radius: 8px;
   background: #0b1020;
+}
+
+.cv-demo-note {
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+  text-align: center;
+  margin: 8px 0 0;
 }
 
 .cv-demo-row {
@@ -39,12 +49,8 @@
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: center;
   margin-top: 12px;
-}
-
-.cv-demo-note {
-  font-size: 13px;
-  color: var(--vp-c-text-2);
 }
 
 .cv-demo button {
