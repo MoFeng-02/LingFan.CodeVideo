@@ -1,10 +1,9 @@
 /**
- * 总线图结构运算：拓扑排序、父链解析、独奏判定与自动化求值。
+ * 总线图结构运算：拓扑排序、父链解析、自动化求值。
  *
  * 只做「图与参数求值」，不碰样本；混音器按这里给出的顺序逐总线处理样本。
  */
 import type {
-  AudioGraph,
   BusAutomation,
   BusId,
   BusSpec,
@@ -55,22 +54,6 @@ function makeAutomation(a: BusAutomation): (ms: Ms) => BusParams {
       solo: k < 1 ? p0.solo : p1.solo,
     };
   };
-}
-
-/**
- * 是否有「独奏」生效：只看非 master 总线——静态 solo，以及其自动化折点上的 solo。
- *
- * 混音器据此把未独奏的非 master 总线整条静音；master 不受独奏影响，
- * 保证独奏声音仍能经 master 送出。
- *
- * @param graph 总线图
- * @returns 任一非 master 总线独奏时为 true
- */
-function anySolo(graph: AudioGraph): boolean {
-  if (graph.buses.some((b) => b.solo && b.id !== MASTER_BUS)) return true;
-  return graph.automation.some(
-    (a) => a.bus !== MASTER_BUS && a.points.some((p) => p.solo),
-  );
 }
 
 /**
@@ -143,5 +126,5 @@ function parentOf(buses: Map<BusId, BusSpec>, id: BusId): BusId | undefined {
   return p && buses.has(p) && p !== id ? p : MASTER_BUS;
 }
 
-export { anySolo, makeAutomation, parentOf, topoOrder };
+export { makeAutomation, parentOf, topoOrder };
 export type { BusParams };

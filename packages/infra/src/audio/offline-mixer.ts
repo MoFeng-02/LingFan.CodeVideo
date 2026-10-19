@@ -105,9 +105,12 @@ export class OfflineAudioMixer implements AudioClock {
    */
   async decode(clip: AudioClip): Promise<DecodedAudio> {
     const pcm = await this.decoder.decode(clip);
-    const { data, ...meta } = pcm;
-    void data;
-    return meta;
+    return {
+      clip: pcm.clip,
+      sampleRate: pcm.sampleRate,
+      channels: pcm.channels,
+      durationMs: pcm.durationMs,
+    };
   }
 
   /**
