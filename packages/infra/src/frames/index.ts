@@ -17,3 +17,4 @@ export {
 } from "./composite-host";
 export { createCanvas2dCompositor } from "./canvas2d-compositor";
 export { isFrameHandle, requireFrameHandle } from "./carrier";
+export { createReadbackHost, readBackHandle, toBitmap } from "./readback-host";

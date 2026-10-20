@@ -19,9 +19,9 @@ await render(scene, { fps: 30, width: 640, height: 360, exporter: new FrameSeque
 
 | 分组 | 出口 |
 | --- | --- |
-| 导出 | `FrameSequenceExporter`（逐帧原始位图）、`WebCodecsExporter`（H.264 + AAC-LC，产物 mp4）、`Mp4Muxer` 与轨道/块类型 |
+| 导出 | `FrameSequenceExporter`（逐帧原始位图）、`WebCodecsExporter`（H.264 + AAC-LC，产物 mp4）、`ApngExporter`（单文件动图，逐帧保 alpha）、`Mp4Muxer` 与轨道/块类型 |
 | 预览 | `PacedPreviewExporter`（按音频时钟排帧）、`CanvasBlitExporter`（贴到页面画布） |
-| 帧合成 | 经 `./frames` 再导出：`createCompositeHost`、`createCanvas2dCompositor`、`planComposite`、`isLayerActive`、载体工具 |
+| 帧合成 | 经 `./frames` 再导出：`createCompositeHost`、`createCanvas2dCompositor`、`createReadbackHost`（把交句柄的帧来源包成交位图）、`planComposite`、`isLayerActive`、载体工具 |
 | 采集 | `MemoryFrameSink`（帧留在内存里供断言/比对） |
 | 诊断 | `frameFingerprint` / `sequenceFingerprint` / `frameDelta` / `continuityReport` / `FrameHasher` / `auditDeterminism` |
 | 音频 | `OfflineAudioMixer`、`WebAudioOutput`、合成器工具（`renderSynth` / `seededRandom` 等）、`voice-timeline`、`warp` |
@@ -44,6 +44,7 @@ import { ... } from "@lingfan-video/infra/frames/adapters/three-compositor";
 ## 读什么
 
 - 出片与预览：[`docs/guides/export-mp4.md`](../../docs/guides/export-mp4.md)
+- 透明产物（APNG、回读宿主）：[`docs/guides/export-alpha.md`](../../docs/guides/export-alpha.md)
 - 音频混音与总线：[`docs/guides/add-audio.md`](../../docs/guides/add-audio.md)
 - 不整片渲染的验证手段：[`docs/guides/debug-with-compute.md`](../../docs/guides/debug-with-compute.md)
 - 端口语义：[`docs/contracts/`](../../docs/contracts/index.md)
