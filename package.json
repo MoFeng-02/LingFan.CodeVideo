@@ -20,6 +20,11 @@
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
+    "@lingfan-character/contracts": "link:../LingFan.CodeCharacter/packages/contracts",
+    "@lingfan-character/example-humanoid": "link:../LingFan.CodeCharacter/examples/humanoid",
+    "@lingfan-character/kernel": "link:../LingFan.CodeCharacter/packages/kernel",
+    "@lingfan-character/primitives": "link:../LingFan.CodeCharacter/packages/primitives",
+    "@lingfan-character/renderer-canvas2d": "link:../LingFan.CodeCharacter/renderers/canvas2d",
     "@lingfan-video/contracts": "workspace:*",
     "@lingfan-video/core": "workspace:*",
     "@lingfan-video/infra": "workspace:*",
@@ -27,6 +32,7 @@
     "@types/three": "^0.186.0",
     "eslint": "^9.39.4",
     "prettier": "^3.3.3",
+    "renderer-canvas2d": "link:../LingFan.CodeCharacter/packages/renderer-canvas2d",
     "three": "^0.186.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.2",

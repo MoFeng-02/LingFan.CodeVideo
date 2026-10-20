@@ -8,6 +8,21 @@ importers:
 
   .:
     devDependencies:
+      '@lingfan-character/contracts':
+        specifier: link:../LingFan.CodeCharacter/packages/contracts
+        version: link:../LingFan.CodeCharacter/packages/contracts
+      '@lingfan-character/example-humanoid':
+        specifier: link:../LingFan.CodeCharacter/examples/humanoid
+        version: link:../LingFan.CodeCharacter/examples/humanoid
+      '@lingfan-character/kernel':
+        specifier: link:../LingFan.CodeCharacter/packages/kernel
+        version: link:../LingFan.CodeCharacter/packages/kernel
+      '@lingfan-character/primitives':
+        specifier: link:../LingFan.CodeCharacter/packages/primitives
+        version: link:../LingFan.CodeCharacter/packages/primitives
+      '@lingfan-character/renderer-canvas2d':
+        specifier: link:../LingFan.CodeCharacter/renderers/canvas2d
+        version: link:../LingFan.CodeCharacter/renderers/canvas2d
       '@lingfan-video/contracts':
         specifier: workspace:*
         version: link:packages/contracts
@@ -29,6 +44,9 @@ importers:
       prettier:
         specifier: ^3.3.3
         version: 3.9.10
+      renderer-canvas2d:
+        specifier: link:../LingFan.CodeCharacter/packages/renderer-canvas2d
+        version: link:../LingFan.CodeCharacter/packages/renderer-canvas2d
       three:
         specifier: ^0.186.1
         version: 0.186.1
