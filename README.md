@@ -44,7 +44,7 @@ const { frames, durationMs } = await render(scene, {
 | --- | --- |
 | 这东西到底是什么、怎么运作 | [`docs/mental-model.md`](docs/mental-model.md) |
 | 按当前任务找页面 | [`docs/README.md`](docs/README.md) |
-| 写剧本 / 拼多幕 / 加声音 / 出 mp4 / 不整片验证 | [`docs/guides/`](docs/guides/first-clip.md) |
+| 写剧本 / 拼多幕 / 加声音 / 出 mp4 / 出透明产物 / 不整片验证 | [`docs/guides/`](docs/guides/first-clip.md) |
 | 某个类型或端口的语义承诺 | [`docs/contracts/`](docs/contracts/index.md) |
 | 代码没报错但「不太对」 | [`docs/pitfalls.md`](docs/pitfalls.md) |
 | 术语的准确含义 | [`docs/glossary.md`](docs/glossary.md) |
@@ -56,7 +56,7 @@ const { frames, durationMs } = await render(scene, {
 ```
 packages/contracts   契约层（零实现依赖：类型 + 语义承诺）
 packages/core        纯域层（编译 / 校验 / 时间数学）+ 引擎运行时 + 组合根
-packages/infra       契约的默认适配器（帧序列、WebCodecs mp4、离线混音、WebAudio 预览、诊断）
+packages/infra       契约的默认适配器（帧序列、透明动图、WebCodecs mp4、离线混音、WebAudio 预览、诊断）
 examples/            消费端示范（Node 脚本 + 浏览器实时预览），不是包
 tests/               集中式单元 / 端到端测试，不是包
 docs/                公开文档（判据式：断言、反例、钉子）
@@ -83,6 +83,7 @@ docs/                公开文档（判据式：断言、反例、钉子）
 - **效果是总线的一部分**：`env.bus({ id:"echo", effects:[{ kind:"delay", delayMs:180, feedback:0.35, mix:0.5 }] })` 声明一次，之后 `ctx.audio(clip, { bus:"echo" })` 或 `ctx.synth(..., { bus:"echo" })` 就挂上去；`filter`/`compressor`/`delay`/`reverb` 按声明顺序就地作用，导出端自研 DSP（确定性、可复算），预览端用 WebAudio 节点（音色近似、时序一致）。
 - **画什么就采什么**：视频的像素事实来源是绘制目标本身——step 回调画在 `ctx.canvas` 上，导出时引擎逐帧从该画布回读（`getImageData`）；GPU/离屏路径注入 `RenderOptions.painter`。不存在第二份像素来源，也不会静默交空白帧：两者都没有时缺省 `spec_violation`（首帧取像素时报），真要占位位图必须显式 `frames:"allow-blank"`。
 - **导出 mp4 自带音轨**：`WebCodecsExporter` 用 H.264 + AAC-LC 编码并自封装 mp4，声音走 `OfflineAudioMixer`（与预览同一份合成公式/求值点）；组合根顺序是「帧 → 声 → finalize」，有声音却没音轨出口会直接 `spec_violation`，不静默丢声。浏览器示例点「导出 MP4」即可下载（`pnpm dev`）。
+- **透明产物是声明，不是开关**：`RenderOptions.alpha: "alpha"` 声明这一趟要交出带 alpha 的画布，随 `FrameHostInfo.alpha` 交给帧宿主、落到合成器建场——两档只差「干净」是哪种干净（不透明黑 / 全透明），共同不变量仍是「每帧从干净画布开始，输出与上一帧无关」。产物能否带 alpha 由封装决定：`ApngExporter` 逐帧保 alpha 出单文件动图，`FrameSequenceExporter` 留原始 RGBA；声明透明却配 mp4 会在首帧前 `spec_violation`，不静默填黑。设备句柄要位图用 `createReadbackHost` 包一层——回读在帧来源侧，不在导出器里。
 - **预览用音频时钟做主时钟**：`PacedPreviewExporter`（infra）按 `WebAudioOutput.nowMs()` 排帧——首次创建 AudioContext 时其时钟可能冷启动数秒，画面若跟墙钟就会「画面放完声音还在响」；无音频时钟或时钟停滞时自动退回墙钟，预览不会卡死。
 - **终界只有一个**：总时间线结束即全停——末帧落在最后一个采样网格点、覆盖到终点后画面保留（之后无帧、无定时器），音频（含 `loop`）只在到终点的剩余时长内发声；导出端由缓冲长度裁齐，预览端显式排 `stop`。
 

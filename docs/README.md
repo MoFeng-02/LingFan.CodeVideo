@@ -14,6 +14,7 @@
 | 把几百段拼成一条链、处理幕间过场 | [`guides/compose-acts.md`](guides/compose-acts.md) |
 | 加声音、路由总线、写参数轨迹 | [`guides/add-audio.md`](guides/add-audio.md) |
 | 在浏览器里出 mp4 | [`guides/export-mp4.md`](guides/export-mp4.md) |
+| 出带透明的产物（叠在别人画面上） | [`guides/export-alpha.md`](guides/export-alpha.md) |
 | 不渲染整片就想验证画面/时间 | [`guides/debug-with-compute.md`](guides/debug-with-compute.md) |
 | 查某个类型/端口的语义承诺 | [`contracts/`](contracts/index.md) |
 | 我写的代码好像「不太对」但没报错 | [`pitfalls.md`](pitfalls.md) |
@@ -28,7 +29,7 @@ docs/
   glossary.md         词汇表（时间与采样 / 生命周期 / 契约角色 / 音频 / 确定性）
   pitfalls.md         反例台账：常见错法 → 为什么错 → 对照页
   contracts/          契约逐域说明（能力、承诺、边界、钉子）
-  guides/             任务导向的五篇上手指南
+  guides/             任务导向的六篇上手指南
 ```
 
 ## 文档与代码的对应关系

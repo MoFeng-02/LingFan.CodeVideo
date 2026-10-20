@@ -9,12 +9,12 @@
 | 时间：任一采样点上的时刻、帧号、总长、步长 | `packages/contracts/src/time/ports.ts`、`packages/contracts/src/shared/units.ts` | 时间语义单位是毫秒；帧号→毫秒只能逐帧乘法 `frameIndex * (1000 / fps)`，禁累加；`fps` 只决定采样密度，不改同一时刻上的语义 | `docs/contracts/time.md` |
 | 剧本：用代码声明「第几毫秒画什么」 | `packages/contracts/src/scene/entities.ts`、`scene/nodes.ts`、`scene/layers.ts`、`scene/random.ts` | 登记期只声明节点、不执行画面；总长由链上窗口累加得出，重叠窗相减；单元有效帧率三级继承；逐帧回调按单元类型给不同能力集 | `docs/contracts/scene.md` |
 | 调度：运行期控制某条链活多久、何时消失 | `packages/contracts/src/scheduler/entities.ts` | `key` 相同即续接同一实例而不是新建；消亡窗口内仍逐帧求值；`forever` 铺到时间线尾，显式 `kill` 才提前结束 | `docs/contracts/scheduler.md` |
-| 捕获：把每一帧交给宿主或导出器 | `packages/contracts/src/capture/ports.ts` | 帧载体分 CPU 位图与设备句柄两支，句柄所有权随交出转移；`begin` 后逐帧调用且引擎逐帧等待，不得并发重入 | `docs/contracts/capture.md` |
-| 导出：把帧序列与音轨封成产物 | `packages/contracts/src/export/ports.ts` | 帧与音频块都在 `finalize` 之前写完，音频块按时间顺序连续提交、拼接即整轨；产物元信息随 `finalize` 一次给出 | `docs/contracts/export.md` |
+| 捕获：把每一帧交给宿主或导出器 | `packages/contracts/src/capture/ports.ts` | 帧载体分 CPU 位图与设备句柄两支，句柄所有权随交出转移；`begin` 后逐帧调用且引擎逐帧等待，不得并发重入；输出透明度随 `FrameHostInfo.alpha` 交给宿主，每帧都必须从干净画布开始 | `docs/contracts/capture.md` |
+| 导出：把帧序列与音轨封成产物 | `packages/contracts/src/export/ports.ts` | 帧与音频块都在 `finalize` 之前写完，音频块按时间顺序连续提交、拼接即整轨；产物元信息随 `finalize` 一次给出；产物能否带 alpha 由封装决定 | `docs/contracts/export.md` |
 | 音频：登记声音、路由总线、两端输出 | `packages/contracts/src/audio/`（`entities.ts` / `graph.ts` / `synth.ts` / `gain.ts` / `ports.ts`） | 登记声音不消耗帧窗池；总线拓扑只在 `bus` 处定，同 id 重复登记以最后一处为准；导出端与预览端是两条输出端口 | `docs/contracts/audio.md` |
 | 资产与输入：setup 阶段取素材、按时刻取输入快照 | `packages/contracts/src/asset/entities.ts`、`asset/ports.ts`、`input/entities.ts`、`input/ports.ts` | 素材只能在 setup 加载，`run` 阶段拿不到；输入是声明式事件表，同一时刻查询必得相等快照 | `docs/contracts/asset-input.md` |
 | 反馈：读状态、接失败、做静态检查 | `packages/contracts/src/feedback/entities.ts` | 状态按 `段标识/单元键` 聚合；错误对象带闭集 `kind` 与毫秒级 `cursor`；静态检查返回数组，空数组即通过 | `docs/contracts/feedback.md` |
-| 入口：一次推演的配置与结果 | `packages/contracts/src/entry/ports.ts` | `fps` / `width` / `height` / `exporter` 必填，其余可选项都有缺省与明确的省略行为；缺帧来源时报错而不是静默交空白帧 | 不单独成页，字段按落点解释：`docs/contracts/capture.md`（`painter` / `frames` / `headless`）、`docs/contracts/export.md`（`exporter` / `audio` / `onProgress`）、`docs/contracts/asset-input.md`（`assets` / `input`）、`docs/contracts/scene.md`（`seed`） |
+| 入口：一次推演的配置与结果 | `packages/contracts/src/entry/ports.ts` | `fps` / `width` / `height` / `exporter` 必填，其余可选项都有缺省与明确的省略行为；缺帧来源时报错而不是静默交空白帧 | 不单独成页，字段按落点解释：`docs/contracts/capture.md`（`painter` / `frames` / `headless` / `alpha`）、`docs/contracts/export.md`（`exporter` / `audio` / `onProgress`）、`docs/contracts/asset-input.md`（`assets` / `input`）、`docs/contracts/scene.md`（`seed`） |
 
 ## 读法
 

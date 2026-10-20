@@ -49,6 +49,7 @@ export default defineConfig({
           { text: "幕段链与过场", link: "/guides/compose-acts" },
           { text: "加声音", link: "/guides/add-audio" },
           { text: "出片 mp4", link: "/guides/export-mp4" },
+          { text: "出透明产物", link: "/guides/export-alpha" },
           { text: "不出片验证", link: "/guides/debug-with-compute" },
         ],
       },

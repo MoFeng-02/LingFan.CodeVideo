@@ -94,6 +94,9 @@
 | 在 `FrameHost` 里跨 `begin` 保留上一段推演的状态 | `begin` 是每次推演的重置点，状态不得跨 `begin` 沿用 | 每次 `begin(info)` 重建内部计数器与缓冲 | `tests/frame-host.test.ts`「重播会重新 begin：跨帧状态不串到下一段推演」 |
 | 用异步 `painter` 时并发取帧（不 await、任其重叠） | 引擎等取帧完成再交帧，取帧慢不丢帧且严格串行；并发会把帧序打乱 | 直接把 `async` 函数当 `painter` 返回，让引擎等 | `tests/async-painter.test.ts`「取帧慢也不丢帧，且严格串行（不重叠取帧）」 |
 | `begin` 失败后继续 `frame(...)`，或失败时仍调 `close()` | `begin` 失败即整段推演失败，不交帧也不调 `close` | 把 `begin` 的错误原样上抛 | `tests/frame-host.test.ts`「begin 失败：整个推演失败，不交帧也不调 close」 |
+| 透明档下少清一次屏（「反正要透明，留点旧像素也没关系」） | 两档的区别只是「干净」是哪种干净；漏清会让上一帧的像素留成鬼影，输出就与上一帧有关了 | 每帧照样清，透明档 = 清成全透明 | `tests/alpha-frames.test.ts`「Canvas2D 合成器按 alpha 档创建上下文」 |
+| 用 mp4 导出器出透明帧，指望透明区域自己留着 | H.264 结构上没有 alpha 通道，透明处会被填黑；声明 `alpha: "alpha"` 却配 mp4 封装，首帧前就报 `spec_violation` | 要透明产物就配 `ApngExporter`，或用 `FrameSequenceExporter` 拿原始 RGBA 自己落盘 | `tests/alpha-frames.test.ts`「声明 \"alpha\" 却用 mp4 封装：首帧前报错，且不写任何帧」 |
+| 在导出器里写「拿不到位图就 `getImageData` 兜底」 | 导出器回读把编码降级成事后补救，还掩盖了「这台设备没有 2D 上下文」的装配错误 | 在帧来源这一侧声明要位图：`createReadbackHost(inner)` 包一层 | `tests/readback-host.test.ts`「非 2D 设备明确报错，而不是交一张黑帧」 |
 
 ## 契约纪律
 

@@ -1,8 +1,8 @@
 ---
 name: codevideo-export
-description: 出片与预览：render 的完整流程、Exporter 三形态（frames / webcodecs / ffmpeg）、帧到音轨到 finalize 的顺序、painter 与 canvas 的注入选择、帧载体所有权、PacedPreviewExporter + CanvasBlitExporter 的预览装配。Use when emitting an mp4 in the browser, wiring preview, injecting a canvas or painter, or diagnosing missing-frame-source errors.
+description: 出片与预览：render 的完整流程、Exporter 四形态（frames / webcodecs / apng / ffmpeg）、透明帧的声明与封装选择、帧到音轨到 finalize 的顺序、painter 与 canvas 的注入选择、帧载体所有权、PacedPreviewExporter + CanvasBlitExporter 的预览装配。Use when emitting an mp4 or a transparent APNG in the browser, wiring preview, injecting a canvas or painter, choosing an alpha-capable container, or diagnosing missing-frame-source errors.
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # 出片与预览
@@ -25,6 +25,7 @@ metadata:
 | `canvas` | 可选 | 能 `getContext("2d")` 的画布 → 引擎走回读路径 |
 | `painter` | 可选 | `FrameSource | FrameHost`（联合名 `Painter`）→ 宿主自绘像素 |
 | `frames` | `"required"` | `"allow-blank"` 只豁免「没有帧来源」报错，不豁免回读 |
+| `alpha` | `"opaque"` | 本次推演要哪种画布：`"alpha"` 让留白处真透明并逐像素带到导出端 |
 | `audio` | 可选 | `AudioClock`（离线混音）→ 写进音轨 |
 | `audioOutput` | 可选 | `AudioOutput`（实时发声）→ 预览用 |
 | `headless` | 缺省 false | true 时不建 DOM 画布（Node 环境） |
@@ -43,14 +44,16 @@ metadata:
 | `FrameSource` | `(frame, t) => Carrier \| Promise<Carrier>` | 纯函数像素来源 |
 | `FrameHost` | `begin(info)` + `frame()` + `close?()` | 带生命周期、可持跨帧状态；`begin` 每次推演调一次、禁并发重入 |
 
-Exporter 三形态（`packages/contracts/src/export/ports.ts` + `packages/infra`）：
+Exporter 四形态（`packages/contracts/src/export/ports.ts` + `packages/infra`）：
 
 | 形态 | 类 | 用途 |
 | --- | --- | --- |
 | `frames` | `FrameSequenceExporter` | 逐帧原始位图，无损，供再加工 |
 | `webcodecs` | `WebCodecsExporter` | 浏览器硬编码 H.264 + AAC，自封装 mp4 |
+| `apng` | `ApngExporter` | 单文件动图，逐帧保 alpha——**透明产物走它** |
 | — | `MemoryFrameSink` | 帧留内存，配 `frameFingerprint` 做测试 |
 | — | `PacedPreviewExporter` + `CanvasBlitExporter` | 按音频时钟排帧 + 贴到页面画布 |
+| — | `createReadbackHost(inner)` | 把交句柄的帧来源包成交位图（回读在帧来源侧，不在导出器里） |
 
 ## 硬约束
 
@@ -61,6 +64,7 @@ Exporter 三形态（`packages/contracts/src/export/ports.ts` + `packages/infra`
 5. **帧载体所有权随 `writeFrame` 转移**。`FrameHandle` 只能 `close()` 一次；实现不得跨帧持有句柄。
 6. **`Exporter.writeAudio` 缺省 = 纯视频**。场景有声音但导出器不支持 `writeAudio` 而你又传了 `audio`（`AudioClock`）→ 报错，不静默丢声。
 7. **预览与导出传同一份注入**（`fps`、尺寸、`seed`、`input`、`assets`），否则两条路径分叉。
+8. **透明产物要三处对齐**：`alpha: "alpha"` 声明、交**位图**的帧来源（句柄要包 `createReadbackHost`）、能装下 alpha 的封装（`apng` / `frames`）。声明透明却配 mp4 → **首帧前** `spec_violation`，一帧都不写。声明只是声明，不是「自动清成透明」：每帧照样清屏，清成全透明。
 
 ## 骨架
 
@@ -93,21 +97,33 @@ const out = await render(scene, {
   frames: "required",
 });
 // out.output 是 Blob/路径；out.frames / out.durationMs 是本次统计
+
+// 透明产物：声明画布 + 交位图 + 保 alpha 的封装
+const apng = await render(scene, {
+  fps: 25, width: 320, height: 180,
+  alpha: "alpha",                                  // 这一趟要透明画布
+  painter: createReadbackHost(compositedHost),     // 句柄 → 位图；回读在帧来源侧
+  exporter: new ApngExporter({ width: 320, height: 180 }),
+});
 ```
 
 - 帧序列模式（要再加工）：`FrameSequenceExporter`，产物是逐帧原始位图，无损。
+- 透明产物（叠在别人画面上）：`alpha: "alpha"` + `ApngExporter`，留白处真透明而不是黑底。
 - Node 下测试：`MemoryFrameSink` 把帧留在内存里，配合 `frameFingerprint` 断言。
 - `painter` 可以是同步函数，也可以返回 Promise（DOM/框架栅格化、GPU 回读）。
 
 ## 验证判据
 
 ```bash
-pnpm vitest run tests/webcodecs-exporter.test.ts tests/export-audio.test.ts tests/backend-port.test.ts tests/preview-paced.test.ts
+pnpm vitest run tests/webcodecs-exporter.test.ts tests/export-audio.test.ts tests/backend-port.test.ts tests/preview-paced.test.ts tests/alpha-frames.test.ts tests/apng-exporter.test.ts tests/readback-host.test.ts
 ```
 
 - 音轨确实写进去了：`tests/export-audio.test.ts`。
 - 缺帧来源必报错、`allow-blank` 才放行：`tests/backend-port.test.ts`。
-- 产物帧数/时长：`render` 返回 `{ frames, durationMs }`，与 `compute.computeRange` 的点数对照。
+- 产物帧数/时长：`render` 返回 `{ frames, durationMs }`，与 `compute.computeRange` 的点数对比。
+- 透明度真的从声明走到上下文：`tests/alpha-frames.test.ts`（声明随 `FrameHostInfo` 交宿主、宿主的 `begin` 收到、Canvas2D 按档建上下文、mp4 首帧前被拦）。
+- 产物逐字节保 alpha、时长按时间戳差：`tests/apng-exporter.test.ts`。
+- 句柄转位图与「非 2D 设备明确报错」：`tests/readback-host.test.ts`。
 
 ## 常见错法
 
@@ -120,6 +136,9 @@ pnpm vitest run tests/webcodecs-exporter.test.ts tests/export-audio.test.ts test
 | 预览和导出用不同 `fps` / 尺寸 | 注入不同 = 另一次推演，两条路径分叉 | 抽一份 `RenderOptions` 公共部分复用 |
 | 认为 mp4 容器字节可复现 | 封装器版本与时间戳会影响字节；确定性判据是帧指纹序列 | 比 `sequenceFingerprint`，不比文件哈希 |
 | 在适配器里偷偷回读 GPU 像素 | 违反「不许静默回读像素降级」 | 明确抛错，或走 `FrameBitmap` 路径 |
+| 声明 `alpha: "alpha"` 却配 mp4 导出器 | H.264 结构上没有 alpha 通道，透明处被填黑；这份产物「看起来成功」比报错更坏 | 换 `ApngExporter`（或 `FrameSequenceExporter` 拿原始 RGBA） |
+| 以为 `alpha: "alpha"` 会替合成器自动清成透明 | 声明只说明这一趟要哪种画布，每帧照样要清；漏清会让上一帧留成鬼影 | 合成器按声明建场并按不变量清屏 |
+| 在导出器里写「拿不到位图就 `getImageData` 兜底」 | 回读把编码降级成事后补救，还掩盖「这台设备没有 2D 上下文」的装配错误 | `createReadbackHost(inner)` 包在帧来源这一侧 |
 
 ## 边界与陷阱
 
@@ -128,3 +147,8 @@ pnpm vitest run tests/webcodecs-exporter.test.ts tests/export-audio.test.ts test
 - **`FrameHost` 的 `begin` 每次推演调一次**，不得并发重入，状态不得跨 `begin` 沿用；`close` 必定尝试。
 - **`audio` 与 `audioOutput` 是两条路**：`audio`（`AudioClock`）离线混音给导出器；`audioOutput`（`AudioOutput`）实时发声。预览可以只给 `audioOutput`。
 - **`headless: true`** 时不创建 DOM 画布；Node 环境用 `headless` + 注入 `painter` 或 `allow-blank`。
+- **alpha 在建场时定死**：它走 `Compositor.begin` 而不是 `composite`（上下文/设备的 alpha 能力是创建参数）；换档必须重新 `begin`。
+- **`FrameHostInfo.alpha` 省略即 `"opaque"`**，且省略时宿主收到的信息里没有这个键——「没声明」与「显式声明不透明」可区分。
+- **APNG 没有音轨，且只收 CPU 位图**：有声音会给 `writeAudio` 报错而不是静默丢音轨；收到 `FrameHandle` 即明确报错。
+- **APNG 的内存随帧数线性增长**：`acTL` 要先声明总帧数，逐帧压好的扫描线必须留到 `finalize`；长片分段出或改用 `FrameSequenceExporter`。
+- **预览不感知 alpha**：`CanvasBlitExporter` / `PacedPreviewExporter` 只负责贴到目标画布与按主时钟放行，`impl` / `format` 照抄内层。

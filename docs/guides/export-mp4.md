@@ -5,7 +5,7 @@
 ## 何时用 / 何时不用
 
 - **用**：要在浏览器里拿到一个可下载的 mp4；需要音轨进片子；需要控制码率或分辨率。
-- **不用**：只想看画面 → 预览路径（`PacedPreviewExporter` + `CanvasBlitExporter`）；只想拿到像素数组 → `FrameSequenceExporter`，它不引入编码器；只想验证不推演 → `debug-with-compute.md`。
+- **不用**：只想看画面 → 预览路径（`PacedPreviewExporter` + `CanvasBlitExporter`）；只想拿到像素数组 → `FrameSequenceExporter`，它不引入编码器；只想验证不推演 → `debug-with-compute.md`；产物要带透明 → `export-alpha.md`（H.264 没有 alpha 通道）。
 
 ## 断言表
 

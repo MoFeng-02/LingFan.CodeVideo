@@ -43,7 +43,9 @@
 | `FrameSink` | 帧交出点：每帧从这里离开渲染端 | 输出、下游 |
 | `FrameSource` / `FrameHost` | 帧像素来源：纯函数来源，或带 `begin/frame/close` 生命周期、可持有跨帧状态的宿主 | 渲染器、画布 |
 | `Painter` | `FrameSource \| FrameHost` 的联合名 | 绘制函数 |
-| `Exporter` | 编码 + 封装的出片端口；`impl` 区分 `frames` / `webcodecs` / `ffmpeg` | 输出器、muxer |
+| 透明度声明 | `RenderOptions.alpha`：本次推演要交出哪种画布，`"opaque"`（缺省）或 `"alpha"`；随 `FrameHostInfo.alpha` 交给宿主 | 渲染开关、透明模式 |
+| 回读宿主 | `createReadbackHost(inner)`：把交句柄的帧来源包成交位图的那一层；回读发生在帧来源侧，不在导出器里 | 截图、导出兜底 |
+| `Exporter` | 编码 + 封装的出片端口；`impl` 区分 `frames` / `webcodecs` / `apng` / `ffmpeg` | 输出器、muxer |
 | 能力即上下文 | 运行期能做的事都挂在 `ctx` 上（`ctx.audio` / `ctx.bus` / `ctx.spawn` / `ctx.random`），没有全局单例 | 全局 API、单例 |
 
 ## 音频
