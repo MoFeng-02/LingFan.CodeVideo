@@ -4,7 +4,7 @@ import type { ExportResult, Exporter } from "../export";
 import type { FrameState, ValidationError } from "../feedback";
 import type { AssetSource } from "../asset";
 import type { AudioClock, AudioOutput } from "../audio";
-import type { Painter } from "../capture";
+import type { FrameAlpha, Painter } from "../capture";
 import type { InputEvent } from "../input";
 
 /**
@@ -58,6 +58,20 @@ export interface RenderOptions {
    * - "allow-blank"：显式接受全 0 占位位图（预览 sink 自绘、或只关心时间/音频的场合）
    */
   frames?: "required" | "allow-blank";
+  /**
+   * 输出透明度（缺省 `"opaque"`）：这一趟推演要交出一块什么样的画布。
+   *
+   * 它是一次**声明**，不是渲染开关——引擎把它随 `FrameHostInfo` 交给帧宿主，
+   * 由宿主落到画布创建与每帧清屏上，再由导出端按同一份声明选择封装：
+   *
+   * - `"opaque"`：每帧从不透明黑开始（H.264 那一档就吃这个）。
+   * - `"alpha"`：每帧从全透明开始，逐像素 alpha 一路带到导出端——
+   *   产物可以叠在别人的画面上当素材复用。
+   *
+   * 两档都遵守同一条不变量：每帧从干净画布开始，输出与上一帧无关。
+   * 声明 `"alpha"` 却选了一个不保 alpha 的导出器（如 mp4），在首帧前报错。
+   */
+  alpha?: FrameAlpha;
   /** 是否无呈现推演：不建显示面、只求值与编码 */
   headless?: boolean;
   /**

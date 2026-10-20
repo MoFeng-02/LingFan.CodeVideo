@@ -79,6 +79,7 @@ function assemble(opts: RenderOptions): {
     height: opts.height,
     canvas,
     headless: opts.headless ?? false,
+    alpha: opts.alpha,
     assets: opts.assets ?? makeDefaultAssets(),
     audioOut: opts.audioOutput,
     input: opts.input,
@@ -166,6 +167,7 @@ export const render: import("@lingfan-video/contracts").RenderFn = async (
   // 契约已把 exporter 定为必填；此处仍守卫一次，供未类型化的 JS 调用方在首帧前拿到明确报错
   const exporter: Exporter | undefined = options.exporter;
   if (!exporter) throw makeMissingExporter();
+  assertAlphaCarrier(options.alpha, exporter);
   const sink = exporterAdapter(exporter);
   // 预览端（Exporter 的实时实现）与导出共用同一 run；预览声音经 audioOut 边跑边发
   const summary = await engine.run(
@@ -273,6 +275,35 @@ function makeMissingExporter(): Error {
   );
   err.name = "SpecViolation";
   return err;
+}
+
+/**
+ * 透明声明的格式守卫：声明了要 alpha，却把帧交给一个结构上装不下 alpha 的封装。
+ *
+ * 这是「声明与产物对不上」的失败，不是编码器的运行期错误：mp4 这一档走 H.264，
+ * 编码格式本身没有 alpha 通道，带透明的画面进去只会得到一片黑底——与其出一份
+ * 看起来成功、实际透明的部分全被填黑的产物，不如在首帧前就说清该换哪个导出器。
+ *
+ * 只在格式层面判：`frames` 留下原始 RGBA、`apng` 逐帧保 alpha、`webm` 保不保
+ * alpha 取决于适配器选的编码（VP9 带 alpha 时能保），因此不在这里拦。
+ *
+ * @param alpha 本次推演的透明度声明
+ * @param exporter 调用方给的导出器
+ * @throws SpecViolation 声明 "alpha" 而导出格式是 mp4
+ */
+function assertAlphaCarrier(
+  alpha: RenderOptions["alpha"],
+  exporter: Exporter,
+): void {
+  if (alpha !== "alpha" || exporter.format !== "mp4") return;
+  const err = new Error(
+    '本次 render 声明了 RenderOptions.alpha = "alpha"（要透明的帧），' +
+      '但导出器 format 是 "mp4"：H.264 没有 alpha 通道，透明区域会被填成黑底。' +
+      "要透明产物请换 ApngExporter（单文件动图，逐帧保 alpha）或 FrameSequenceExporter" +
+      '（逐帧原始 RGBA）；确实要 mp4 就把 alpha 声明改成 "opaque"。',
+  );
+  err.name = "SpecViolation";
+  throw err;
 }
 
 /** headless 画布：Node 无 OffscreenCanvas 全局 → 最小桩（模拟求值不触 canvas API；GPU 适配器要求真画布） */

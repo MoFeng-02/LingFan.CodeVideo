@@ -14,6 +14,7 @@ import type {
   BusPoint,
   BusSpec,
   DuckRule,
+  FrameAlpha,
   FrameCarrier,
   FrameIndex,
   FrameState,
@@ -91,6 +92,8 @@ export interface EngineOptions {
   canvas: HTMLCanvasElement | OffscreenCanvas;
   /** 无真实画布 / DOM 时为 true（只做模拟求值，或帧像素由宿主自绘提供） */
   headless: boolean;
+  /** 输出透明度（缺省 = `"opaque"`）：随 `FrameHostInfo.alpha` 交给帧宿主 */
+  alpha?: FrameAlpha;
   /** 资产来源（setup 阶段 assets.load 的后端；缺省 = fail-fast 实现） */
   assets?: AssetSource;
   /** 预览端实时音频输出（注入 = 运行期发射即时发声；缺省 = 只记录声音） */

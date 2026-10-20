@@ -5,7 +5,7 @@
  * 承载面是一块画布（2D / WebGL / WebGPU 都行），合成器只认画布，
  * 交出的结果是设备侧帧载体（零拷贝，不回读 CPU 像素）。
  */
-import type { FrameIndex, Ms } from "@lingfan-video/contracts";
+import type { FrameAlpha, FrameIndex, Ms } from "@lingfan-video/contracts";
 
 /**
  * 一层画面在时间线上的可见区间（左闭右开，故事时间毫秒）。
@@ -88,14 +88,23 @@ export interface Compositor {
   /** 合成器标识（能力探测与日志用，如 `canvas2d` / `three`） */
   readonly id: string;
   /**
-   * 初始化或重新适配输出尺寸。
+   * 初始化或重新适配输出尺寸与输出透明度。
    *
    * 可以在同一个实例上多次调用以换尺寸；返回 Promise 表示后端初始化是异步的
    * （如 GPU 设备请求），调用方要 await 后再 `composite`。
    *
-   * @param size 输出尺寸（像素）
+   * `alpha` 决定「干净画布」是哪一种：`"opaque"`（缺省）清到不透明黑，
+   * `"alpha"` 清到全透明。上下文/设备的 alpha 属性通常在创建时定死，
+   * 所以它属于 `begin` 而不是 `composite`——换透明度要重新 `begin`。
+   *
+   * @param size 输出尺寸（像素）与输出透明度
    */
-  begin(size: { width: number; height: number }): void | Promise<void>;
+  begin(size: {
+    readonly width: number;
+    readonly height: number;
+    /** 输出透明度（省略 = `"opaque"`） */
+    readonly alpha?: FrameAlpha;
+  }): void | Promise<void>;
   /**
    * 合成一帧并交出设备侧载体。
    *

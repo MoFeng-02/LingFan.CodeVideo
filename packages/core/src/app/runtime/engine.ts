@@ -112,6 +112,8 @@ export class TimelineEngine {
       height: opts.height,
       durationMs: this.state.timelineEnd,
       headless: opts.headless ?? false,
+      // 输出透明度同上：只有显式声明时才出现在宿主参数里，旧宿主的既有行为不变
+      ...(opts.alpha ? { alpha: opts.alpha } : {}),
       // 没有层声明时不给这个键：宿主的既有形态（旧实现只认 fps/尺寸/时长）不变
       ...(declared.length > 0 ? { layers: declared } : {}),
     };

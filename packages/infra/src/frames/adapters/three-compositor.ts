@@ -28,7 +28,7 @@ import {
   SRGBColorSpace,
   WebGLRenderer,
 } from "three";
-import type { FrameHandle } from "@lingfan-video/contracts";
+import type { FrameAlpha, FrameHandle } from "@lingfan-video/contracts";
 import type { CompositeInput, Compositor, FrameLayer } from "../types";
 
 /** GPU 合成器参数 */
@@ -72,6 +72,8 @@ export function createThreeCompositor(
   let width = 0;
   /** 当前输出高（像素）；0 表示尚未初始化 */
   let height = 0;
+  /** 当前输出透明度档：决定清屏色与绘制缓冲是否带 alpha */
+  let alpha: FrameAlpha = "opaque";
   /** 底图承载；与渲染器同生命周期 */
   let base: Slot | null = null;
   /** 层 id → 承载；按需创建，`dispose` 时整体清空 */
@@ -80,15 +82,28 @@ export function createThreeCompositor(
   const geometry = new PlaneGeometry(1, 1);
 
   /**
-   * 确保渲染器与场景匹配给定尺寸；尺寸不变则直接返回。
+   * 确保渲染器与场景匹配给定尺寸与输出透明度；两者都不变则直接返回。
    *
-   * @param size 目标输出尺寸（像素）
+   * @param size 目标输出尺寸（像素）与透明度档
    */
-  const ensure = (size: { width: number; height: number }): void => {
-    if (renderer && width === size.width && height === size.height) return;
+  const ensure = (size: {
+    width: number;
+    height: number;
+    alpha?: FrameAlpha;
+  }): void => {
+    /** 本次要用的透明度档（省略 = 不透明） */
+    const nextAlpha: FrameAlpha = size.alpha ?? "opaque";
+    if (
+      renderer &&
+      width === size.width &&
+      height === size.height &&
+      alpha === nextAlpha
+    )
+      return;
     dispose();
     width = size.width;
     height = size.height;
+    alpha = nextAlpha;
     /** 渲染目标画布：尺寸即输出尺寸，像素比固定为 1 */
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -96,13 +111,16 @@ export function createThreeCompositor(
     renderer = new WebGLRenderer({
       canvas,
       antialias: false,
-      alpha: false,
+      // 透明档必须让绘制缓冲带 alpha；不透明档关掉它可以省一点带宽
+      alpha: alpha === "alpha",
       // 不保留缓冲时，抓帧往往拿到上一帧（甚至空缓冲）
       preserveDrawingBuffer: options.preserveDrawingBuffer ?? true,
     });
     renderer.setPixelRatio(1);
     renderer.setSize(width, height, false);
-    renderer.setClearColor(0x000000, 1);
+    // 清屏色是「干净画布」的定义：不透明档清到不透明黑，透明档清到全透明。
+    // 两档都必须清，否则上一帧像素会留到这一帧。
+    renderer.setClearColor(0x000000, alpha === "alpha" ? 0 : 1);
     renderer.autoClear = true;
     scene = new Scene();
     // 像素坐标系：单位 = 输出像素，方便把任意尺寸的层铺满整幅画面
@@ -214,7 +232,8 @@ export function createThreeCompositor(
       ensure(size);
     },
     async composite(input: CompositeInput): Promise<FrameHandle> {
-      ensure({ width: input.width, height: input.height });
+      // 透明度由 begin 定，这里沿用当前档位做尺寸校准（不能传 undefined 把它打回不透明）
+      ensure({ width: input.width, height: input.height, alpha });
       attach(base!, input.base);
       /** 本帧出现过的层 id：其余承载置为不可见（不销毁，留待下次复用） */
       const seen = new Set<string>();

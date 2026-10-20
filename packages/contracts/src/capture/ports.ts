@@ -1,6 +1,23 @@
 import type { FrameIndex, Ms } from "../shared/units";
 import type { LayerDeclaration } from "../scene/layers";
 
+/**
+ * 一次推演的**输出透明度**：帧像素要不要保留 alpha 通道。
+ *
+ * 这是「本次推演要交出一块什么样的画布」的声明，不是渲染技巧——它由调用方
+ * 在 `RenderOptions.alpha` 上声明一次，随 `FrameHostInfo` 交给帧宿主，由宿主
+ * 落到合成器的清屏与上下文创建上。两档的差别只有一处：
+ *
+ * - `"opaque"`：每帧从**不透明黑**开始。未覆盖处是黑，alpha 恒为 255。
+ *   这是缺省，也是能交给 H.264/MP4 的那一档。
+ * - `"alpha"`：每帧从**全透明**开始。未覆盖处保持透明，逐像素 alpha 一路带到
+ *   导出端。想叠在别人的画面上、想让产物当素材复用，就用这一档。
+ *
+ * 两档都满足同一条不变量：**每帧从干净画布开始，输出与上一帧无关**。
+ * 变的只是「干净」是哪种干净。
+ */
+export type FrameAlpha = "opaque" | "alpha";
+
 /** 帧载体（CPU 位图最小形态；数据在 CPU 侧可读写，纹理等载体由其上层自行适配） */
 export interface FrameBitmap {
   /** 载体形态判别符；省略视为 "bitmap" */
@@ -99,6 +116,15 @@ export interface FrameHostInfo {
   readonly durationMs: Ms;
   /** 是否无呈现出片：不建显示面、只求值与编码 */
   readonly headless: boolean;
+  /**
+   * 本次推演要求的输出透明度（省略 = `"opaque"`）。
+   *
+   * 宿主按它决定「每帧从哪种干净画布开始」：`"opaque"` 清到不透明黑，
+   * `"alpha"` 清到全透明并把逐像素 alpha 一路带到导出端。
+   *
+   * @see FrameAlpha
+   */
+  readonly alpha?: FrameAlpha;
   /**
    * 本片声明的画面层（剧本 `env.layer(...)` 的编译产物，绝对故事时间）。
    *

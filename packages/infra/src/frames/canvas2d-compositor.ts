@@ -4,8 +4,11 @@
  * 它也在「零拷贝」序列里：2D 画布同样能被 `VideoFrame` 直接包住，
  * 所以即便机器没有 WebGL2/WebGPU，帧到编码器这一段仍然不回读像素。
  * 差别只在合成是 CPU 光栅（GPU 光栅）而不是 GPU 着色管线。
+ *
+ * 输出透明度由 `begin` 的 `alpha` 决定，两档只差上下文创建与「干净」的定义：
+ * 不透明档清到不透明黑，透明档清到全透明。每帧都从干净画布开始这一条不变。
  */
-import type { FrameHandle } from "@lingfan-video/contracts";
+import type { FrameAlpha, FrameHandle } from "@lingfan-video/contracts";
 import type { CompositeInput, Compositor } from "./types";
 
 /**
@@ -22,18 +25,23 @@ export function createCanvas2dCompositor(): Compositor {
   let canvas: HTMLCanvasElement | OffscreenCanvas | null = null;
   /** 输出画布的 2D 上下文，与 `canvas` 同生命周期 */
   let ctx: CanvasRenderingContext2D | null = null;
+  /** 本次 `begin` 定的输出透明度：决定「干净画布」是哪一种 */
+  let alpha: FrameAlpha = "opaque";
 
   return {
     id: "canvas2d",
     begin(size) {
+      alpha = size.alpha ?? "opaque";
       canvas =
         typeof OffscreenCanvas !== "undefined"
           ? new OffscreenCanvas(size.width, size.height)
           : document.createElement("canvas");
       canvas.width = size.width;
       canvas.height = size.height;
+      // alpha 属性在创建上下文时定死：透明档必须显式 alpha:true，
+      // 否则 clearRect 清出来的是不透明黑，alpha 通道在这一步就丢了。
       ctx = (canvas as HTMLCanvasElement).getContext("2d", {
-        alpha: false,
+        alpha: alpha === "alpha",
       }) as CanvasRenderingContext2D | null;
       if (!ctx) throw new Error("Canvas2D 合成器初始化失败：拿不到 2d 上下文");
     },
@@ -50,8 +58,8 @@ export function createCanvas2dCompositor(): Compositor {
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
       // 每帧都是独立合成：底图允许大面积透明（`frames: "allow-blank"`），
-      // 上一帧的像素不能留下来。GPU 合成器同样每帧清到不透明黑，
-      // 两档合成器的输出才对得上。
+      // 上一帧的像素不能留下来。GPU 合成器用同一份 alpha 声明清到同一种
+      // 「干净」，两档合成器的输出才对得上。
       ctx.clearRect(0, 0, input.width, input.height);
       ctx.drawImage(
         input.base as CanvasImageSource,

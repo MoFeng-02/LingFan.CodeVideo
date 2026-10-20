@@ -11,6 +11,7 @@
  * 交出的帧是 `FrameHandle`：从渲染到编码不经过 CPU 像素（零拷贝的落点）。
  */
 import type {
+  FrameAlpha,
   FrameCarrier,
   FrameHost,
   FrameHostInfo,
@@ -44,6 +45,13 @@ export interface CompositeHostOptions {
   readonly compositor?: Compositor;
   /** 合成器候选顺序（越前越优先）；返回 null 表示该后端不可用 */
   readonly candidates?: readonly (() => Compositor | null)[];
+  /**
+   * 输出透明度（省略 = `"opaque"`）；缺省取 `FrameHostInfo.alpha`。
+   *
+   * 引擎把 `RenderOptions.alpha` 放进 `FrameHostInfo` 交下来，正常装配不必自己填；
+   * 这个字段是给「不经引擎、直接驱动宿主」的场合留的显式入口。
+   */
+  readonly alpha?: FrameAlpha;
 }
 
 /** 合成宿主：实现契约里的 `FrameHost`，并暴露实际选中的合成器 id */
@@ -128,6 +136,8 @@ export function createCompositeHost(
   let compositorId: string | null = null;
   /** 探测失败的合成器及其原因（`id: message` 形式，供诊断） */
   let failed: string[] = [];
+  /** 本次推演的输出透明度：决定合成器清到哪种「干净」，随 `begin` 定一次 */
+  let alpha: FrameAlpha = options.alpha ?? "opaque";
 
   /** 候选合成器工厂：显式指定时只有一个，否则用传入顺序或内置缺省 */
   const candidates: readonly (() => Compositor | null)[] = options.compositor
@@ -152,7 +162,9 @@ export function createCompositeHost(
       const candidate = make();
       if (!candidate) continue;
       try {
-        await candidate.begin(size);
+        // 透明度随尺寸一起交给合成器：上下文/设备的 alpha 属性在创建时定死，
+        // 所以它是「建场参数」而不是「每帧参数」，换档必须重新 begin。
+        await candidate.begin({ ...size, alpha });
         compositor = candidate;
         compositorId = candidate.id;
         return candidate;
@@ -175,6 +187,9 @@ export function createCompositeHost(
       return failed;
     },
     async begin(info: FrameHostInfo) {
+      // 输出透明度是本次推演的画布语义：引擎在 RenderOptions.alpha 声明一次，
+      // 随宿主参数交下来，由宿主决定「干净画布」是哪一种。显式 options.alpha 优先。
+      alpha = options.alpha ?? info.alpha ?? "opaque";
       // 声明在编译期就有了：把「剧本要的层」与「应用给的面」一次配对好。
       // 只配对一次（同一宿主只服务一次推演；重播会重建宿主，这是引擎的约定）。
       if (!resolved) {

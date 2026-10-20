@@ -1,11 +1,16 @@
 import type { Ms } from "../shared/units";
 import type { FrameCarrier } from "../capture";
 
-/** 导出格式（封装/复用归实现内部） */
-export type ExportFormat = "mp4" | "webm" | "frames";
+/**
+ * 导出格式（封装/复用归实现内部）。
+ *
+ * `mp4`/`webm` 是带音轨的成片封装，`frames` 是逐帧产物，
+ * `apng` 是保 alpha 的单文件动图封装——透明产物走它。
+ */
+export type ExportFormat = "mp4" | "webm" | "frames" | "apng";
 
 /** 实现标注：组合根按它选适配器 */
-export type ExporterImpl = "webcodecs" | "ffmpeg" | "frames";
+export type ExporterImpl = "webcodecs" | "ffmpeg" | "frames" | "apng";
 
 /** 导出结果：产物位置/句柄与本次导出的统计 */
 export interface ExportResult {
