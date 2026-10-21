@@ -12,7 +12,11 @@ import type { LedgerState } from "../program";
 import { paintEndCard, paintScrims } from "./endcard";
 import { paintHero } from "./hero";
 import { paintRuler, paintTopBar } from "./chrome";
-function paint(g: CanvasRenderingContext2D, state: LedgerState): void {
+function paint(
+  g: CanvasRenderingContext2D,
+  state: LedgerState,
+  scrims: boolean,
+): void {
   const scale = g.canvas.height / DESIGN.height;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, g.canvas.width, g.canvas.height);
@@ -20,7 +24,7 @@ function paint(g: CanvasRenderingContext2D, state: LedgerState): void {
   g.textBaseline = "alphabetic";
 
   // 这一帧的事实只有一份：二维层照 fn 的输出来画，不自己再算一遍
-  paintScrims(g);
+  if (scrims) paintScrims(g);
   paintHero(g, state);
   paintRuler(g, state);
   paintTopBar(g, state);
@@ -35,7 +39,20 @@ export interface TypeLayer {
   dispose(): void;
 }
 
-export function createType(width: number, height: number): TypeLayer {
+/**
+ * 造二维层。
+ *
+ * @param width 画布宽（像素）
+ * @param height 画布高（像素）
+ * @param scrims 是否铺压在画面上的三块遮罩。遮罩是给成片看的——它把三维场压暗
+ *   好让读数读得清；透明产物是素材，要叠在别人的画面上，铺满整幅的暗底会把
+ *   alpha 通道填死，所以透明演示关掉它
+ */
+export function createType(
+  width: number,
+  height: number,
+  scrims = true,
+): TypeLayer {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -52,7 +69,7 @@ export function createType(width: number, height: number): TypeLayer {
       },
     },
     paint(state: LedgerState) {
-      paint(g, state);
+      paint(g, state, scrims);
     },
     dispose() {
       canvas.width = 0;

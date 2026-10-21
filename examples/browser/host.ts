@@ -18,18 +18,42 @@ import {
 import { createThreeCompositor } from "@lingfan-video/infra/frames/adapters/three-compositor";
 
 import { createField } from "./ledger/field";
-import { buildProgram } from "./ledger/program";
+import type { FieldLayer } from "./ledger/field";
+import { buildProgram, type LedgerProgram } from "./ledger/program";
 import { CHAPTERS } from "./ledger/script";
 import { createType } from "./ledger/type";
+import type { TypeLayer } from "./ledger/type";
+
+/** 一次装配的产物：宿主、两支画面层与整片程序 */
+export interface Stage {
+  readonly host: ReturnType<typeof createCompositeHost>;
+  readonly program: LedgerProgram;
+  /** 三维层：透明演示片段要复用它画同一批图形 */
+  readonly field: FieldLayer;
+  /** 二维层：同上 */
+  readonly type: TypeLayer;
+}
+
+/** 一次装配的可选项 */
+export interface StageOptions {
+  /**
+   * 二维层是否铺压在画面上的遮罩（缺省铺）。
+   *
+   * 遮罩是给成片看的：它把三维场压暗，读数才读得清。透明产物是素材，
+   * 整幅的暗底会把 alpha 填死，所以透明演示关掉它。
+   */
+  readonly scrims?: boolean;
+}
 
 export function makeStageHost(
   canvas: HTMLCanvasElement,
   gpu: boolean,
   width: number,
   height: number,
-) {
+  options: StageOptions = {},
+): Stage {
   const field = createField(width, height);
-  const type = createType(width, height);
+  const type = createType(width, height, options.scrims ?? true);
   // 层声明按镜给 id，宿主按 id 交面：画布是共享的，只是每镜一个别名的面
   const surfaces: Record<string, LayerSurface> = {};
   for (const shot of CHAPTERS.flat()) {
@@ -45,5 +69,5 @@ export function makeStageHost(
       ? [() => createThreeCompositor(), () => createCanvas2dCompositor()]
       : [() => createCanvas2dCompositor()],
   });
-  return { host, program: buildProgram({ field, type }) };
+  return { host, program: buildProgram({ field, type }), field, type };
 }
