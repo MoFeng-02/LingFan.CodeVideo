@@ -13,6 +13,10 @@ export const HEIGHT = 1080;
 export const PREVIEW_W = 1280;
 export const PREVIEW_H = 720;
 
+/** 透明产物演示片段的尺寸：演示按预览档出，不按成片档撑体积。 */
+export const ALPHA_W = PREVIEW_W;
+export const ALPHA_H = PREVIEW_H;
+
 /** 导出容器的基准采样率：镜头采样密度由剧本逐段声明，这里只定容器。 */
 export const BASE_FPS = 30;
 
@@ -23,6 +27,12 @@ stage.height = PREVIEW_H;
 export const hud = document.getElementById("hud") as HTMLDivElement;
 export const playBtn = document.getElementById("play") as HTMLButtonElement;
 export const exportBtn = document.getElementById("export") as HTMLButtonElement;
+export const exportApngBtn = document.getElementById(
+  "export-apng",
+) as HTMLButtonElement;
+export const exportWebmBtn = document.getElementById(
+  "export-webm",
+) as HTMLButtonElement;
 
 /** 互斥标记与暂停开关：三条消费端共享，防止同时开两次推演。 */
 export const session = { busy: false, paused: false };
