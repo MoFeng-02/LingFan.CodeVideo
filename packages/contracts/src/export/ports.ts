@@ -10,7 +10,7 @@ import type { FrameCarrier } from "../capture";
 export type ExportFormat = "mp4" | "webm" | "frames" | "apng";
 
 /** 实现标注：组合根按它选适配器 */
-export type ExporterImpl = "webcodecs" | "ffmpeg" | "frames" | "apng";
+export type ExporterImpl = "webcodecs" | "webm" | "ffmpeg" | "frames" | "apng";
 
 /** 导出结果：产物位置/句柄与本次导出的统计 */
 export interface ExportResult {
@@ -40,6 +40,15 @@ export interface Exporter {
   readonly impl: ExporterImpl;
   /** 产物格式 */
   readonly format: ExportFormat;
+  /**
+   * 本实例的产物是否携带 alpha 通道（省略 = 不携带）。
+   *
+   * 格式只是必要条件，不是充分条件：同一种封装可以在建实例时选择带不带 alpha
+   * （WebM 的 alpha 是并行的侧通道，要在编码器与容器两侧都声明）。引擎据此在首帧
+   * 之前判断「声明的透明度」与「产物能力」是否对得上，对不上就报错，而不是让
+   * 透明区域被静默填成黑底。
+   */
+  readonly alpha?: boolean;
   /**
    * 写入一帧。
    * @param frame 设备句柄或 CPU 位图（所有权见类型说明）

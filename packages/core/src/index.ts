@@ -278,29 +278,45 @@ function makeMissingExporter(): Error {
 }
 
 /**
- * 透明声明的格式守卫：声明了要 alpha，却把帧交给一个结构上装不下 alpha 的封装。
+ * 判一个导出器能不能装下 alpha。
  *
- * 这是「声明与产物对不上」的失败，不是编码器的运行期错误：mp4 这一档走 H.264，
- * 编码格式本身没有 alpha 通道，带透明的画面进去只会得到一片黑底——与其出一份
- * 看起来成功、实际透明的部分全被填黑的产物，不如在首帧前就说清该换哪个导出器。
+ * 导出器自己声明的能力优先（同一封装可以在建实例时选择带不带 alpha，透明 WebM
+ * 就是这样：alpha 是并行的侧通道，要在编码器与容器两侧一起声明）；没有显式声明
+ * 时按封装的结构判断——`frames` 留原始 RGBA、`apng` 逐帧保 alpha，这两个格式
+ * 没有「不带 alpha」的档位。
  *
- * 只在格式层面判：`frames` 留下原始 RGBA、`apng` 逐帧保 alpha、`webm` 保不保
- * alpha 取决于适配器选的编码（VP9 带 alpha 时能保），因此不在这里拦。
+ * @param exporter 调用方给的导出器
+ * @returns 产物是否携带 alpha 通道
+ */
+function carriesAlpha(exporter: Exporter): boolean {
+  if (exporter.alpha !== undefined) return exporter.alpha;
+  return exporter.format === "frames" || exporter.format === "apng";
+}
+
+/**
+ * 透明声明的能力守卫：声明了要 alpha，却把帧交给一个装不下 alpha 的产物。
+ *
+ * 这是「声明与产物对不上」的失败，不是编码器的运行期错误：mp4 走 H.264，
+ * 编码格式本身没有 alpha 通道，带透明的画面进去只会得到一片黑底；WebM 的
+ * alpha 也要在导出器上显式打开才有侧通道。与其出一份看起来成功、实际透明处
+ * 全被填黑的产物，不如在首帧前就说清该换哪个导出器、或该打开哪个开关。
  *
  * @param alpha 本次推演的透明度声明
  * @param exporter 调用方给的导出器
- * @throws SpecViolation 声明 "alpha" 而导出格式是 mp4
+ * @throws SpecViolation 声明 "alpha" 而导出器装不下 alpha
  */
 function assertAlphaCarrier(
   alpha: RenderOptions["alpha"],
   exporter: Exporter,
 ): void {
-  if (alpha !== "alpha" || exporter.format !== "mp4") return;
+  if (alpha !== "alpha" || carriesAlpha(exporter)) return;
   const err = new Error(
     '本次 render 声明了 RenderOptions.alpha = "alpha"（要透明的帧），' +
-      '但导出器 format 是 "mp4"：H.264 没有 alpha 通道，透明区域会被填成黑底。' +
-      "要透明产物请换 ApngExporter（单文件动图，逐帧保 alpha）或 FrameSequenceExporter" +
-      '（逐帧原始 RGBA）；确实要 mp4 就把 alpha 声明改成 "opaque"。',
+      `但导出器 ${exporter.impl} 的产物装不下 alpha（format 是 "${exporter.format}"）。` +
+      "要透明产物请换 ApngExporter（单文件动图，逐帧保 alpha）、" +
+      "带 { alpha: true } 的 WebmExporter（VP8/VP9 侧通道，仍是带音轨的成片），" +
+      "或 FrameSequenceExporter（逐帧原始 RGBA）；" +
+      '确实要这一档产物就把 alpha 声明改成 "opaque"。',
   );
   err.name = "SpecViolation";
   throw err;

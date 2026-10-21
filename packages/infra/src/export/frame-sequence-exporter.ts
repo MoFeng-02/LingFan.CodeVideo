@@ -35,6 +35,8 @@ export class FrameSequenceExporter implements Exporter {
   readonly impl = "frames" as const;
   /** 产物格式标识：与 `ExportResult.format` 对应 */
   readonly format = "frames" as const;
+  /** 逐帧位图保留原始 RGBA，alpha 原样留在像素里 */
+  readonly alpha = true;
   /** 已收帧（按写入顺序，长度 = 帧数） */
   private readonly captured: CapturedFrame[] = [];
 

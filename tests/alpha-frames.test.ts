@@ -213,7 +213,7 @@ describe("透明帧：声明从入口走到画布", () => {
         alpha: "alpha",
         frames: "allow-blank",
       }),
-    ).rejects.toThrow(/H\.264 没有 alpha 通道/);
+    ).rejects.toThrow(/装不下 alpha（format 是 "mp4"）/);
     expect(exporter.writes).toBe(0);
   });
 

@@ -50,6 +50,8 @@ export class ApngExporter implements Exporter {
   readonly impl: ExporterImpl = "apng";
   /** 产物格式 */
   readonly format: ExportFormat = "apng";
+  /** PNG 的 RGBA 像素逐帧原样压进产物，alpha 一路保留 */
+  readonly alpha = true;
 
   private readonly width: number;
   private readonly height: number;

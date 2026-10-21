@@ -30,6 +30,8 @@ export class CanvasBlitExporter implements Exporter {
   readonly impl: ExporterImpl;
   /** 产物格式标识，原样照抄内层 */
   readonly format: ExportFormat;
+  /** 产物是否带 alpha，同样照抄内层：贴帧不改变产物的透明度能力 */
+  readonly alpha?: boolean;
   /** 仅当内层接受音频块时存在 */
   readonly writeAudio?: (
     samples: Float32Array,
@@ -51,6 +53,7 @@ export class CanvasBlitExporter implements Exporter {
   ) {
     this.impl = inner.impl;
     this.format = inner.format;
+    if (inner.alpha !== undefined) this.alpha = inner.alpha;
     this.target = (target as HTMLCanvasElement).getContext(
       "2d",
     ) as CanvasRenderingContext2D | null;
