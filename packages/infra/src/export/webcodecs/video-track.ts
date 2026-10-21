@@ -11,7 +11,8 @@ import type {
 } from "@lingfan-video/contracts";
 import { extractParameterSets } from "../mp4";
 import type { Mp4Muxer } from "../mp4";
-import type { EncoderGate } from "./encoder-gate";
+import type { EncoderGate } from "../encoder-gate";
+import { copyChunkBytes } from "../encoded-chunk";
 import type { WebCodecsExporterOptions } from "./types";
 
 /** H.264 编码器与帧转换的持有者：一帧一帧喂给容器，收尾时 flush/close */
@@ -148,7 +149,7 @@ export class VideoTrack {
           this.ppsBytes = ps.pps;
         }
         this.muxer.addVideo({
-          data: copyBytes(chunk),
+          data: copyChunkBytes(chunk),
           timestampUs: chunk.timestamp,
           durationUs: chunk.duration ?? 0,
           keyFrame: chunk.type === "key",
@@ -168,12 +169,4 @@ export class VideoTrack {
     });
     this.encoder = encoder;
   }
-}
-
-/** EncodedChunk 数据拷贝（chunk 的 buffer 由编码器复用） */
-function copyBytes(chunk: EncodedVideoChunk | EncodedAudioChunk): Uint8Array {
-  /** 拷贝目标：编码器的缓冲会被复用，必须自己留一份 */
-  const out = new Uint8Array(new ArrayBuffer(chunk.byteLength));
-  chunk.copyTo(out.buffer);
-  return out;
 }

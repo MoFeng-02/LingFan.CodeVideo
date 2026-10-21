@@ -25,7 +25,7 @@ import type {
 } from "@lingfan-video/contracts";
 import { Mp4Muxer, makeAvcC } from "../mp4";
 import { AudioTrack } from "./audio-track";
-import { EncoderGate } from "./encoder-gate";
+import { EncoderGate } from "../encoder-gate";
 import { VideoTrack } from "./video-track";
 import type { WebCodecsExporterOptions } from "./types";
 

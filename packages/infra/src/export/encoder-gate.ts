@@ -5,7 +5,7 @@
  * 异常。这里把首个错误存下来，之后任何写入/收尾以及正在等待出队的调用方都按
  * 同一错误失败，不会静默继续。
  */
-import { MAX_ENCODE_QUEUE } from "./types";
+import { MAX_ENCODE_QUEUE } from "./encode-limits";
 
 /** 首个编码错误的中转站：错误只记录一次，唤醒所有等待者 */
 export class EncoderGate {

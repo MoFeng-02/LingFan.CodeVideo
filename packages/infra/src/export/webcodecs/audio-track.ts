@@ -6,8 +6,10 @@
  */
 import { makeAacConfig } from "../mp4";
 import type { Mp4Muxer } from "../mp4";
-import type { EncoderGate } from "./encoder-gate";
-import { AUDIO_BLOCK_FRAMES } from "./types";
+import type { EncoderGate } from "../encoder-gate";
+import { AUDIO_BLOCK_FRAMES } from "../encode-limits";
+import { toPlanarFloat32 } from "../audio-planar";
+import { copyChunkBytes } from "../encoded-chunk";
 import type { WebCodecsExporterOptions } from "./types";
 
 /** 音频轨：首块定布局、逐块编码，收尾时 flush/close 并交出封装需要的轨规格 */
@@ -72,7 +74,7 @@ export class AudioTrack {
       /** 本块采样帧数：正常取满上限，尾块取余数 */
       const frames = Math.min(AUDIO_BLOCK_FRAMES, totalFrames - off);
       /** 本块的平面布局样本（各声道首尾相接） */
-      const planar = toPlanar(samples, channels, off, frames);
+      const planar = toPlanarFloat32(samples, channels, off, frames);
       /** 提交给编码器的一块音频；时间戳按已提交的采样帧数推算（微秒） */
       const data = new AudioData({
         format: "f32-planar",
@@ -150,7 +152,7 @@ export class AudioTrack {
         if (desc && !this.ascBytes)
           this.ascBytes = new Uint8Array(desc as ArrayBuffer);
         this.muxer.addAudio({
-          data: copyBytes(chunk),
+          data: copyChunkBytes(chunk),
           durationUs: chunk.duration ?? 0,
         });
       },
@@ -166,31 +168,4 @@ export class AudioTrack {
     this.encoder = encoder;
     this.audioLayout = { sampleRate, channels };
   }
-}
-
-/** EncodedChunk 数据拷贝（chunk 的 buffer 由编码器复用） */
-function copyBytes(chunk: EncodedVideoChunk | EncodedAudioChunk): Uint8Array {
-  /** 拷贝目标：编码器的缓冲会被复用，必须自己留一份 */
-  const out = new Uint8Array(new ArrayBuffer(chunk.byteLength));
-  chunk.copyTo(out.buffer);
-  return out;
-}
-
-/** 交错 Float32 → 平面 Float32（AudioData 的 f32-planar 布局） */
-function toPlanar(
-  interleaved: Float32Array,
-  channels: number,
-  offsetFrames: number,
-  frames: number,
-): Float32Array {
-  /** 平面布局结果：各声道依次放满 `frames` 个样本 */
-  const out = new Float32Array(frames * channels);
-  for (let ch = 0; ch < channels; ch++) {
-    /** 本声道在输出里的起始下标 */
-    const base = ch * frames;
-    for (let f = 0; f < frames; f++) {
-      out[base + f] = interleaved[(offsetFrames + f) * channels + ch] ?? 0;
-    }
-  }
-  return out;
 }

@@ -3,9 +3,11 @@
  * 只依赖 @lingfan-video/contracts（能力只依赖契约，不知道 core 存在）。
  *
  * 大致按端口分组：
- * - **导出**：三条产物形态不同的路径——`FrameSequenceExporter`（逐帧原始位图，
+ * - **导出**：四条产物形态不同的路径——`FrameSequenceExporter`（逐帧原始位图，
  *   无损可再加工）、`WebCodecsExporter`（浏览器硬编，产物是 mp4 文件）、
- *   以及给 mp4 封装用的 `Mp4Muxer` 与轨道/块类型；
+ *   `WebmExporter`（浏览器硬编，产物是 webm，可带 VP8/VP9 的 alpha 侧通道）、
+ *   `ApngExporter`（逐帧压 PNG 并拼成单文件动图，保 alpha）；
+ *   以及给封装用的 `Mp4Muxer`、`WebmMuxer` 与轨道/块类型；
  * - **预览**：`PacedPreviewExporter` 与 `CanvasBlitExporter`，都是按实时节奏
  *   放行的 `frames` 导出器，用来在页面里看推演结果，不做编码；
  * - **帧合成**：经 `./frames` 再导出（合成器接缝、合成宿主、层计划、载体工具）；
@@ -29,6 +31,15 @@ export {
 } from "./export/png";
 export { WebCodecsExporter } from "./export/webcodecs";
 export type { WebCodecsExporterOptions } from "./export/webcodecs";
+export { WebmExporter, WebmMuxer } from "./export/webm";
+export type {
+  WebmAudioChunk,
+  WebmAudioSpec,
+  WebmExporterOptions,
+  WebmVideoChunk,
+  WebmVideoCodec,
+  WebmVideoSpec,
+} from "./export/webm";
 export { Mp4Muxer } from "./export/mp4";
 export type {
   AudioChunkSpec,
