@@ -12,19 +12,24 @@ Code Video 契约的**默认适配器集**：端口在这里有可跑的实现�
 ```ts
 import { FrameSequenceExporter } from "@lingfan-video/infra";
 
-await render(scene, { fps: 30, width: 640, height: 360, exporter: new FrameSequenceExporter() });
+await render(scene, {
+  fps: 30,
+  width: 640,
+  height: 360,
+  exporter: new FrameSequenceExporter(),
+});
 ```
 
 ## 出口分组
 
-| 分组 | 出口 |
-| --- | --- |
-| 导出 | `FrameSequenceExporter`（逐帧原始位图）、`WebCodecsExporter`（H.264 + AAC-LC，产物 mp4）、`ApngExporter`（单文件动图，逐帧保 alpha）、`Mp4Muxer` 与轨道/块类型 |
-| 预览 | `PacedPreviewExporter`（按音频时钟排帧）、`CanvasBlitExporter`（贴到页面画布） |
-| 帧合成 | 经 `./frames` 再导出：`createCompositeHost`、`createCanvas2dCompositor`、`createReadbackHost`（把交句柄的帧来源包成交位图）、`planComposite`、`isLayerActive`、载体工具 |
-| 采集 | `MemoryFrameSink`（帧留在内存里供断言/比对） |
-| 诊断 | `frameFingerprint` / `sequenceFingerprint` / `frameDelta` / `continuityReport` / `FrameHasher` / `auditDeterminism` |
-| 音频 | `OfflineAudioMixer`、`WebAudioOutput`、合成器工具（`renderSynth` / `seededRandom` 等）、`voice-timeline`、`warp` |
+| 分组   | 出口                                                                                                                                                                                                                                         |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 导出   | `FrameSequenceExporter`（逐帧原始位图）、`WebCodecsExporter`（H.264 + AAC-LC，产物 mp4）、`WebmExporter`（VP8/VP9 + Opus，产物 webm，可选 alpha 侧通道）、`ApngExporter`（单文件动图，逐帧保 alpha）、`Mp4Muxer` / `WebmMuxer` 与轨道/块类型 |
+| 预览   | `PacedPreviewExporter`（按音频时钟排帧）、`CanvasBlitExporter`（贴到页面画布）                                                                                                                                                               |
+| 帧合成 | 经 `./frames` 再导出：`createCompositeHost`、`createCanvas2dCompositor`、`createReadbackHost`（把交句柄的帧来源包成交位图）、`planComposite`、`isLayerActive`、载体工具                                                                      |
+| 采集   | `MemoryFrameSink`（帧留在内存里供断言/比对）                                                                                                                                                                                                 |
+| 诊断   | `frameFingerprint` / `sequenceFingerprint` / `frameDelta` / `continuityReport` / `FrameHasher` / `auditDeterminism`                                                                                                                          |
+| 音频   | `OfflineAudioMixer`、`WebAudioOutput`、合成器工具（`renderSynth` / `seededRandom` 等）、`voice-timeline`、`warp`                                                                                                                             |
 
 ## 子路径导出
 

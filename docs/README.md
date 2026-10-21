@@ -7,18 +7,18 @@
 
 ## 先读哪一页
 
-| 你要做的事 | 读 |
-| --- | --- |
-| 第一次接触本仓，想知道它是什么 | [`mental-model.md`](mental-model.md) |
-| 写第一段能出帧的剧本 | [`guides/first-clip.md`](guides/first-clip.md) |
-| 把几百段拼成一条链、处理幕间过场 | [`guides/compose-acts.md`](guides/compose-acts.md) |
-| 加声音、路由总线、写参数轨迹 | [`guides/add-audio.md`](guides/add-audio.md) |
-| 在浏览器里出 mp4 | [`guides/export-mp4.md`](guides/export-mp4.md) |
-| 出带透明的产物（叠在别人画面上） | [`guides/export-alpha.md`](guides/export-alpha.md) |
-| 不渲染整片就想验证画面/时间 | [`guides/debug-with-compute.md`](guides/debug-with-compute.md) |
-| 查某个类型/端口的语义承诺 | [`contracts/`](contracts/index.md) |
-| 我写的代码好像「不太对」但没报错 | [`pitfalls.md`](pitfalls.md) |
-| 查术语的准确含义 | [`glossary.md`](glossary.md) |
+| 你要做的事                         | 读                                                             |
+| ---------------------------------- | -------------------------------------------------------------- |
+| 第一次接触本仓，想知道它是什么     | [`mental-model.md`](mental-model.md)                           |
+| 写第一段能出帧的剧本               | [`guides/first-clip.md`](guides/first-clip.md)                 |
+| 把几百段拼成一条链、处理幕间过场   | [`guides/compose-acts.md`](guides/compose-acts.md)             |
+| 加声音、路由总线、写参数轨迹       | [`guides/add-audio.md`](guides/add-audio.md)                   |
+| 在浏览器里出 mp4                   | [`guides/export-mp4.md`](guides/export-mp4.md)                 |
+| 出带透明的产物（APNG 或透明 webm） | [`guides/export-alpha.md`](guides/export-alpha.md)             |
+| 不渲染整片就想验证画面/时间        | [`guides/debug-with-compute.md`](guides/debug-with-compute.md) |
+| 查某个类型/端口的语义承诺          | [`contracts/`](contracts/index.md)                             |
+| 我写的代码好像「不太对」但没报错   | [`pitfalls.md`](pitfalls.md)                                   |
+| 查术语的准确含义                   | [`glossary.md`](glossary.md)                                   |
 
 ## 目录结构
 
@@ -34,11 +34,11 @@ docs/
 
 ## 文档与代码的对应关系
 
-| 文档层 | 对应代码 | 说明 |
-| --- | --- | --- |
+| 文档层           | 对应代码                       | 说明                                   |
+| ---------------- | ------------------------------ | -------------------------------------- |
 | `contracts/*.md` | `packages/contracts/src/<域>/` | 逐域解释端口与语义承诺；签名以源码为准 |
-| `guides/*.md` | `examples/` + `tests/` | 每篇都有可跑例子与指向测试的钉子 |
-| `pitfalls.md` | `tests/` 中被钉死的反例 | 每条错法都能被某条测试或校验器抓到 |
+| `guides/*.md`    | `examples/` + `tests/`         | 每篇都有可跑例子与指向测试的钉子       |
+| `pitfalls.md`    | `tests/` 中被钉死的反例        | 每条错法都能被某条测试或校验器抓到     |
 
 ## 三条读法约定
 

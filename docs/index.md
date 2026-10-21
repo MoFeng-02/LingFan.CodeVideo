@@ -60,17 +60,17 @@ await render(scene, {
 
 ## 接下来读什么
 
-| 想做什么 | 读哪页 |
-| --- | --- |
-| 理解「画面是 t 的函数」与四层模型 | [心智模型](/mental-model) |
-| 写出第一段逐帧画面 | [第一段画面](/guides/first-clip) |
-| 把多幕拼成链、处理过场与并行 | [幕间与链](/guides/compose-acts) |
-| 给画面加声音 | [加声音](/guides/add-audio) |
-| 导出 mp4 / 接预览 | [出片与预览](/guides/export-mp4) |
-| 出带透明的产物 | [透明产物](/guides/export-alpha) |
-| 不出片就验证确定性 | [取样验证](/guides/debug-with-compute) |
-| 查某条契约的准确语义与判据 | [契约总览](/contracts/index) |
-| 对照常见写法错误 | [常见错法](/pitfalls) |
+| 想做什么                           | 读哪页                                 |
+| ---------------------------------- | -------------------------------------- |
+| 理解「画面是 t 的函数」与四层模型  | [心智模型](/mental-model)              |
+| 写出第一段逐帧画面                 | [第一段画面](/guides/first-clip)       |
+| 把多幕拼成链、处理过场与并行       | [幕间与链](/guides/compose-acts)       |
+| 给画面加声音                       | [加声音](/guides/add-audio)            |
+| 导出 mp4 / webm / 接预览           | [出片与预览](/guides/export-mp4)       |
+| 出带透明的产物（APNG 或透明 webm） | [透明产物](/guides/export-alpha)       |
+| 不出片就验证确定性                 | [取样验证](/guides/debug-with-compute) |
+| 查某条契约的准确语义与判据         | [契约总览](/contracts/index)           |
+| 对照常见写法错误                   | [常见错法](/pitfalls)                  |
 
 </div>
 

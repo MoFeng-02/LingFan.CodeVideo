@@ -25,7 +25,7 @@ metadata:
 | `codevideo-scene` | 单幕剧本：`start` / `env.step` / 上下文能力集 / 状态聚合 | 从零写第一段能出帧的剧本，或改 `step` 回调里的画面与状态 |
 | `codevideo-schedule` | 多幕链：`cutTo` / `transitionTo` / `par` / `loop` / `spawn` / `layer` / 消杀 | 把多段拼成一条链、处理幕间过渡与并行分支、控制 spawn 生命周期 |
 | `codevideo-audio` | 声音：组合子、包络、总线图、运行期句柄、`once` 去重 | 加声音、路由总线、侧链、写参数轨迹、决定声音何时收 |
-| `codevideo-export` | 出片：`render` 全流程、`Exporter` 四形态、透明帧的声明与封装、预览宿主、帧载体所有权 | 在浏览器出 mp4 或透明 APNG、接预览、注入画布或 painter、排查「没有帧来源」类报错 |
+| `codevideo-export` | 出片：`render` 全流程、`Exporter` 五形态、透明帧的声明与封装、预览宿主、帧载体所有权 | 在浏览器出 mp4 / webm（含透明）或透明 APNG、接预览、注入画布或 painter、排查「没有帧来源」类报错 |
 | `codevideo-verify` | 验证：`validate` / `compute` / 帧指纹 / 连续性 / 早停 | 不整片渲染就想确认时间与画面、给改动写回归测试、判定确定性 |
 
 ## 选择规则
