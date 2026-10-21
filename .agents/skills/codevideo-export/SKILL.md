@@ -44,7 +44,7 @@ metadata:
 | `FrameSource` | `(frame, t) => Carrier \| Promise<Carrier>` | 纯函数像素来源 |
 | `FrameHost` | `begin(info)` + `frame()` + `close?()` | 带生命周期、可持跨帧状态；`begin` 每次推演调一次、禁并发重入 |
 
-Exporter 四形态（`packages/contracts/src/export/ports.ts` + `packages/infra`）：
+Exporter 五形态（`packages/contracts/src/export/ports.ts` + `packages/infra`；`ffmpeg` 是契约开放取值，本仓无适配器）：
 
 | 形态 | 类 | 用途 |
 | --- | --- | --- |

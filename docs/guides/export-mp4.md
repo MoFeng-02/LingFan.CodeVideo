@@ -2,10 +2,12 @@
 
 `WebCodecsExporter`（`packages/infra/src/export/webcodecs/`）实现 `Exporter` 端口（`packages/contracts/src/export/ports.ts`），把推演交出的帧编码成 H.264、把 `AudioClock` 混出的 PCM 编码成 AAC，再由 `Mp4Muxer` 封装成 `Blob`。
 
+要 **webm** 走的是另一条路：`WebmExporter`（`packages/infra/src/export/webm/`）用 VP8/VP9 + Opus，容器由本仓自写 EBML 段/簇/索引。两条路径互不复用封装代码，共用的只是背压与音频块上限。本页只讲 mp4 这条。
+
 ## 何时用 / 何时不用
 
 - **用**：要在浏览器里拿到一个可下载的 mp4；需要音轨进片子；需要控制码率或分辨率。
-- **不用**：只想看画面 → 预览路径（`PacedPreviewExporter` + `CanvasBlitExporter`）；只想拿到像素数组 → `FrameSequenceExporter`，它不引入编码器；只想验证不推演 → `debug-with-compute.md`；产物要带透明 → `export-alpha.md`（H.264 没有 alpha 通道）。
+- **不用**：只想看画面 → 预览路径（`PacedPreviewExporter` + `CanvasBlitExporter`）；只想拿到像素数组 → `FrameSequenceExporter`，它不引入编码器；只想验证不推演 → `debug-with-compute.md`；产物要带透明 → `export-alpha.md`（H.264 没有 alpha 通道；要带音轨的透明成片换 `WebmExporter`）。
 
 ## 断言表
 
