@@ -157,6 +157,8 @@ await render(scene, {
 | `WebCodecsExporter`     | mp4（H.264 / AAC）     | 否                      | 有     | 声明透明会被首帧守卫拦下             |
 | 自定义 `Exporter`       | 你说的算               | 看封装与实例声明        | 看实现 | 自己实现 `writeFrame` / `finalize`   |
 
+两条透明路径的完整装配在示例里：`examples/browser/export-alpha.ts`（同一个 `render` 调两次，只换导出器与封装声明）、`examples/browser/export-ui.ts`（三条出片路径共用一份互斥与下载），演示片段见 `examples/browser/ledger/demo.ts`——它取整片开头几镜单独成片，因为 APNG 的内存随帧数线性增长，整片一次性出不划算。
+
 ## 反例
 
 ### ✗ 声明透明却配 mp4 导出器
@@ -207,6 +209,7 @@ await render(scene, {
 - **APNG 没有音轨**：有声音的剧本会给 `writeAudio` 报错，而不是静默丢音轨。要带声音的透明成片用 `WebmExporter`。
 - **APNG 只收 CPU 位图**：收到 `FrameHandle` 即明确报错；尺寸与声明不符也在写帧前拦下。透明 webm 同样只收位图。
 - **预览不受影响**：`CanvasBlitExporter` / `PacedPreviewExporter` 只负责贴到目标画布、按主时钟放行，`impl` / `format` 照抄内层，不感知 alpha。
+- **画面里的不透明底会把 alpha 填死**：声明再对、封装再保 alpha，只要某一层铺了整幅不透明底（做片时用来压暗背景的那种遮罩），产物就是一张满 alpha 的画面。透明产物是素材，得按素材重新决定「哪些底色要留」——这不是引擎的事，是场景的事。
 - **确定性分级**：APNG 是纯内存封装、无编码器参与，同一组输入两次封装字节完全相同；mp4 与 webm 两路受编码器与容器影响，比对用帧指纹而不是比较文件字节。
 
 ## 相关

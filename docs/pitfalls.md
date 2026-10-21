@@ -102,6 +102,7 @@
 | 用文件探针看透明 WebM 的像素格式，断言它不是透明                      | alpha 走的是侧通道，探针看到的就是普通 yuv 像素格式——这不代表产物没有 alpha                                        | 判据看容器里的 AlphaMode 与块附加数据                                                         | `tests/webm-muxer.test.ts`「透明块走 BlockGroup」                                                                                                                       |
 | 把任意采样率的音频交给 WebM 导出器                                    | Opus 的采样率写死在码流头里，48kHz 之外要么重采样要么报错，静默改采样率会让音高整体偏掉                            | 让 `AudioClock` 声明 48kHz；导出端不做静默重采样                                              | `tests/webm-exporter.test.ts`「采样率不是 48kHz：首块即报 spec_violation」                                                                                              |
 | 透明档给导出的帧来源是设备句柄                                        | 句柄不承诺 CPU 可读，alpha 侧通道需要逐像素 alpha，导出器又不回读像素                                              | 用 `createReadbackHost` 包一层拿到位图，或把 alpha 声明改成 `"opaque"`                        | `tests/webm-exporter.test.ts`「透明档只收位图：设备句柄明确报错」                                                                                                       |
+| 声明与封装都对了，产物还是不透明，怀疑引擎丢了 alpha                  | 声明、封装只管「画布」与「容器」；场景自己铺的整幅不透明底会把 alpha 通道填满，任何封装都留不出透明区              | 透明产物是素材：按素材重定场景的底色（层里可关掉压暗用的遮罩），别指望导出端补                | 示例装配见 `examples/browser/export-alpha.ts` 与 `examples/browser/host.ts` 的 `scrims` 开关                                                                            |
 
 ## 契约纪律
 
