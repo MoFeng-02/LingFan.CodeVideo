@@ -169,7 +169,8 @@ async function play(): Promise<void> {
   const base = document.createElement("canvas");
   base.width = PREVIEW_W;
   base.height = PREVIEW_H;
-  const { host, program } = makeStageHost(base, false, PREVIEW_W, PREVIEW_H);
+  // 预览只给 CPU 档：GPU 档每帧要把三块画布当纹理重传，主线程跟不上实时节奏。
+  const { host, program } = makeStageHost(base, PREVIEW_W, PREVIEW_H);
   try {
     const result = await render(program.picture, {
       fps: BASE_FPS,
@@ -242,7 +243,8 @@ export async function runStill(at: Ms): Promise<void> {
   const base = document.createElement("canvas");
   base.width = PREVIEW_W;
   base.height = PREVIEW_H;
-  const { host, program } = makeStageHost(base, false, PREVIEW_W, PREVIEW_H);
+  // 定格与预览同一档：同一张画、同一批层，只是提前中断
+  const { host, program } = makeStageHost(base, PREVIEW_W, PREVIEW_H);
   try {
     await render(program.picture, {
       fps: BASE_FPS,

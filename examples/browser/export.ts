@@ -3,7 +3,12 @@
  * 预览贴回舞台实时放；导出把合成画布直接交给编码器，音频离线混。
  */
 import { render } from "@lingfan-video/core";
-import { OfflineAudioMixer, WebCodecsExporter } from "@lingfan-video/infra";
+import {
+  OfflineAudioMixer,
+  WebCodecsExporter,
+  createCanvas2dCompositor,
+} from "@lingfan-video/infra";
+import { createThreeCompositor } from "@lingfan-video/infra/frames/adapters/three-compositor";
 
 import { makeSynthDecoder } from "./audio-assets";
 import { beginExport, endExport, saveBlob } from "./export-ui";
@@ -26,7 +31,13 @@ export async function exportMp4(): Promise<void> {
     const exportCanvas = document.createElement("canvas");
     exportCanvas.width = WIDTH;
     exportCanvas.height = HEIGHT;
-    const { host, program } = makeStageHost(exportCanvas, true, WIDTH, HEIGHT);
+    const { host, program } = makeStageHost(exportCanvas, WIDTH, HEIGHT, {
+      // 导出要吞吐：先给 GPU 档让合成结果直接进编码器，拿不到再退 CPU 档
+      compositors: [
+        () => createThreeCompositor(),
+        () => createCanvas2dCompositor(),
+      ],
+    });
     const exporter = new WebCodecsExporter({
       width: WIDTH,
       height: HEIGHT,

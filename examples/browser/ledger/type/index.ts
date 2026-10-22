@@ -5,18 +5,18 @@
  * 层不认识镜头，也不看时间轴：`paint(state)` 画的就是 fn 这一帧算出来的状态；
  * 时刻用引擎给的 `state.t`，段内节奏用 `state.local`。
  * 设计坐标 640×360，按实际高度等比放大；排版只在设计坐标里算一次。
+ *
+ * 压暗画面的那三块暗底**不在这里**：它是一层（`ledger/scrim`），由剧本声明。
+ * 这一层只画读数本身，背景透明——要不要压暗由剧本加不加那一层决定。
  */
 import type { LayerSurface } from "@lingfan-video/infra";
 import { DESIGN } from "../script";
 import type { LedgerState } from "../program";
-import { paintEndCard, paintScrims } from "./endcard";
+import { paintEndCard } from "./endcard";
 import { paintHero } from "./hero";
 import { paintRuler, paintTopBar } from "./chrome";
-function paint(
-  g: CanvasRenderingContext2D,
-  state: LedgerState,
-  scrims: boolean,
-): void {
+
+function paint(g: CanvasRenderingContext2D, state: LedgerState): void {
   const scale = g.canvas.height / DESIGN.height;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, g.canvas.width, g.canvas.height);
@@ -24,7 +24,6 @@ function paint(
   g.textBaseline = "alphabetic";
 
   // 这一帧的事实只有一份：二维层照 fn 的输出来画，不自己再算一遍
-  if (scrims) paintScrims(g);
   paintHero(g, state);
   paintRuler(g, state);
   paintTopBar(g, state);
@@ -44,15 +43,8 @@ export interface TypeLayer {
  *
  * @param width 画布宽（像素）
  * @param height 画布高（像素）
- * @param scrims 是否铺压在画面上的三块遮罩。遮罩是给成片看的——它把三维场压暗
- *   好让读数读得清；透明产物是素材，要叠在别人的画面上，铺满整幅的暗底会把
- *   alpha 通道填死，所以透明演示关掉它
  */
-export function createType(
-  width: number,
-  height: number,
-  scrims = true,
-): TypeLayer {
+export function createType(width: number, height: number): TypeLayer {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -69,7 +61,7 @@ export function createType(
       },
     },
     paint(state: LedgerState) {
-      paint(g, state, scrims);
+      paint(g, state);
     },
     dispose() {
       canvas.width = 0;

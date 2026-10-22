@@ -6,19 +6,23 @@
  * - 帧来源换成 `createReadbackHost`：透明编码要逐像素 alpha，拿到的是位图而不是句柄；
  * - 导出器换成保 alpha 的封装（`ApngExporter` / 带 alpha 的 `WebmExporter`）。
  *
- * 合成器在这里只能用 CPU 档：位图回读要 2D 上下文，GPU 档交的是 WebGL 画布。
- * 这也是透明路与 mp4 路唯一不能共用合成器的地方——同一批层、同一个 z 序，只是谁叠。
+ * 走的是**整片**，与 mp4 那条一样：不裁片段、不换剧本骨架。剧本里只少一层——
+ * 遮罩（`makeMaterialStage`）。素材要叠在别人的画面上，铺满整幅的暗底会把 alpha 填死。
+ *
+ * 合成器两档都能用：回读对任何画布都成立（2D 直读，WebGL 先拷进接收画布再读），
+ * 所以这里和 mp4 一样先给 GPU 档、失败退 CPU。
  */
 import { render } from "@lingfan-video/core";
 import {
   ApngExporter,
   WebmExporter,
+  createCanvas2dCompositor,
   createReadbackHost,
 } from "@lingfan-video/infra";
+import { createThreeCompositor } from "@lingfan-video/infra/frames/adapters/three-compositor";
 
 import { beginExport, endExport, saveBlob } from "./export-ui";
-import { makeStageHost } from "./host";
-import { buildAlphaDemo } from "./ledger/demo";
+import { makeMaterialStage } from "./host";
 import {
   ALPHA_H,
   ALPHA_W,
@@ -29,27 +33,33 @@ import {
 } from "./session";
 
 /**
- * 造一套透明出片用的装配：独立画布 + CPU 合成 + 位图回读。
+ * 合成器候选：与 mp4 那条路同一份顺序——先 GPU 档（合成结果直接进编码器），
+ * 拿不到再退 CPU 档。透明档不改变这个选择，回读对两档都成立。
+ */
+const COMPOSITORS = [
+  () => createThreeCompositor(),
+  () => createCanvas2dCompositor(),
+] as const;
+
+/**
+ * 造一套透明出片用的装配：独立画布 + 不带遮罩的剧本 + 位图回读。
  *
  * 画布每次新造：上一轮的残留会让「直接出片」与「先预览再出片」得到不同像素。
- * 演示片段的每一镜仍用原来那两层 id 声明层，所以宿主拿到的面与整片完全一致。
  *
- * @returns 合成宿主、包成位图的帧来源，以及整条演示片段
+ * @returns 合成宿主、包成位图的帧来源，以及整条片
  */
 function makeAlphaStage() {
   const canvas = document.createElement("canvas");
   canvas.width = ALPHA_W;
   canvas.height = ALPHA_H;
-  // 关掉二维层的遮罩：成片靠它压暗三维场让读数读得清，但透明产物是素材，
-  // 铺满整幅的暗底会把 alpha 通道填死——导出物便再也透不出后面的画面。
-  const stage = makeStageHost(canvas, false, ALPHA_W, ALPHA_H, {
-    scrims: false,
+  const stage = makeMaterialStage(canvas, ALPHA_W, ALPHA_H, {
+    compositors: COMPOSITORS,
   });
   return {
     canvas,
     host: stage.host,
     painter: createReadbackHost(stage.host),
-    scene: buildAlphaDemo({ field: stage.field, type: stage.type }),
+    scene: stage.program.picture,
   };
 }
 
@@ -57,7 +67,7 @@ function makeAlphaStage() {
  * 导出透明 APNG：逐帧保 alpha 的单文件动图，无音轨。
  *
  * 这条路的产物是素材（叠进别的片子或设计稿），不是带音轨的成片；
- * 演示片段里没有声音，因此也不需要混音时钟。
+ * APNG 没有音轨，因此不需要混音时钟——剧本里的声音照常推演，只是不落盘。
  */
 export async function exportAlphaApng(): Promise<void> {
   if (!beginExport(exportApngBtn, "编码透明 APNG…")) return;

@@ -78,4 +78,11 @@ export type LedgerState = ReturnType<typeof shotFrame>;
 export interface Painters {
   readonly field?: { paint(state: LedgerState): void };
   readonly type?: { paint(state: LedgerState): void };
+  /**
+   * 压暗画面的遮罩层。
+   *
+   * 给不给它决定这份剧本有没有遮罩这一层：成片给（`host.ts` 的 `program`），
+   * 透明素材不给（那是要叠在别人画面上的东西，铺满整幅的暗底会把 alpha 填死）。
+   */
+  readonly scrim?: { paint(state: LedgerState): void };
 }

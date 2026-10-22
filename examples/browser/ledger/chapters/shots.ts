@@ -1,8 +1,11 @@
 /**
  * 逐段登记：把一批片段按顺序交给引擎，每段声明自己的层与采样密度。
  *
- * 抽出来是因为「逐段登记」有两个消费方（整章 / 演示片段），写法只能有一份——
+ * 抽出来是因为「逐段登记」有两个消费方（整章 / 透明素材），写法只能有一份——
  * 两处各写一遍就会在层 id 或 step 参数上慢慢分叉。
+ *
+ * 遮罩层也在这里声明：给 `painters.scrim` 就是这份剧本要压暗画面，不给就是不要。
+ * 所以「成片」与「透明素材」是两份不同的剧本（声明不同的层），不是同一份剧本换布尔。
  */
 import type {
   FrameState,
@@ -30,12 +33,15 @@ export function scheduleShots(
     const fn = frames[index]!;
     // 层随段声明：不写窗口长度，活到本段末尾；下一镜用新 id 再声明一次
     env.layer({ id: `field:${shot.id}`, z: 0 });
+    // 遮罩夹在三维场与读数之间：压暗的是底下的场，读数画在它上面
+    if (painters.scrim) env.layer({ id: `scrim:${shot.id}`, z: 5 });
     env.layer({ id: `type:${shot.id}`, z: 10 });
     env.step(
       shot.length,
       (ctx) => {
         const state = fn(ctx);
         painters.field?.paint(state);
+        painters.scrim?.paint(state);
         painters.type?.paint(state);
         return state as FrameState;
       },
