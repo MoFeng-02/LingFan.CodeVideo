@@ -124,7 +124,7 @@ pnpm vitest run tests/webcodecs-exporter.test.ts tests/export-audio.test.ts test
 - 产物帧数/时长：`render` 返回 `{ frames, durationMs }`，与 `compute.computeRange` 的点数对比。
 - 透明度真的从声明走到上下文：`tests/alpha-frames.test.ts`（声明随 `FrameHostInfo` 交宿主、宿主的 `begin` 收到、Canvas2D 按档建上下文、mp4 首帧前被拦）。
 - 产物逐字节保 alpha、时长按时间戳差：`tests/apng-exporter.test.ts`。
-- 句柄转位图与「非 2D 设备明确报错」：`tests/readback-host.test.ts`。
+- 句柄转位图：`tests/readback-host.test.ts`（位图原样交出、2D 画布直读不经接收画布、WebGL 等非 2D 画布借绘制搬进来再读、非画布对象明确报错）。
 - webm 容器自己写对了：`tests/webm-muxer.test.ts`（EBML 骨架、SimpleBlock 与 BlockGroup 两种块、簇与 `CUES` 偏移真落在簇起点、Opus 轨道）。
 - 透明 webm 的两路编码配对与 `BlockAdditions`：`tests/webm-exporter.test.ts`。
 
@@ -145,6 +145,7 @@ pnpm vitest run tests/webcodecs-exporter.test.ts tests/export-audio.test.ts test
 | 用 ffprobe 看到 yuv420p 就以为 alpha 丢了 | VP9 的 alpha 是 `BlockAdditions` 侧通道，容器层像素格式仍是普通 yuv | 用支持 alpha 侧通道的解码器验证，或直接看同一个源出的 APNG |
 | 以为 `alpha: "alpha"` 会替合成器自动清成透明 | 声明只说明这一趟要哪种画布，每帧照样要清；漏清会让上一帧留成鬼影 | 合成器按声明建场并按不变量清屏 |
 | 在导出器里写「拿不到位图就 `getImageData` 兜底」 | 回读把编码降级成事后补救，还掩盖「这台设备没有 2D 上下文」的装配错误 | `createReadbackHost(inner)` 包在帧来源这一侧 |
+| 以为透明出片只能配 `createCanvas2dCompositor` | 回读对任何画布都成立：2D 直读，WebGL 等先拷进一张自持 2D 画布再读，合成仍在原后端 | 想用 GPU 合成就直接配 `createThreeCompositor`，回读仍在帧来源侧 |
 
 ## 边界与陷阱
 
@@ -156,7 +157,7 @@ pnpm vitest run tests/webcodecs-exporter.test.ts tests/export-audio.test.ts test
 - **alpha 在建场时定死**：它走 `Compositor.begin` 而不是 `composite`（上下文/设备的 alpha 能力是创建参数）；换档必须重新 `begin`。
 - **`FrameHostInfo.alpha` 省略即 `"opaque"`**，且省略时宿主收到的信息里没有这个键——「没声明」与「显式声明不透明」可区分。
 - **APNG 没有音轨，且只收 CPU 位图**：有声音会给 `writeAudio` 报错而不是静默丢音轨；收到 `FrameHandle` 即明确报错。
-- **APNG 的内存随帧数线性增长**：`acTL` 要先声明总帧数，逐帧压好的扫描线必须留到 `finalize`；长片分段出或改用 `FrameSequenceExporter`。
+- **APNG 的内存只随压缩后字节增长**：帧压完即入列，块本身是独立字节串，收尾时才把 `acTL` 插到帧块之前——总帧数不必提前声明。
 - **webm 的 alpha 是侧通道，不是像素格式**：透明档多开一路只含关键帧的 alpha 编码器，逐帧字节落在块的 `BlockAdditions`（`BlockAddID=1`）里，容器轨道另写 `AlphaMode=1`。所以探针看到的仍是普通 yuv，`ALPHA_MODE` 与侧通道必须在同一份产物里对齐。
 - **两条编码路径各自封容器**：`WebCodecsExporter`（H.264 + AAC → mp4，`mp4/` 自写 box）与 `WebmExporter`（VP8/VP9 + Opus → webm，EBML 自写段/簇/索引）互不复用封装代码，共用的是 `EncoderGate`（背压）与 `encode-limits`（队列上限、音频块大小）。
 - **webm 的音频固定 48kHz Opus**：采样率不是 48000 时明确报错而不是静默重采样——重采样会让「同一份剧本逐样本相同」这条承诺失效。

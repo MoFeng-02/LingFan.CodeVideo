@@ -25,7 +25,9 @@
 | APNG 产物逐字节保留 alpha 通道                                       | 解压后每行过滤字节为 0、像素 alpha 与输入一致   | `tests/apng-exporter.test.ts`「alpha 通道逐字节落进产物」                                    |
 | APNG 停留时长取相邻时间戳差，变帧率不被抹平                          | fcTL 的 delay 序列等于各段间隔                  | `tests/apng-exporter.test.ts`「停留时长按相邻时间戳差表达，末帧沿用前一间隔」                |
 | 回读宿主把句柄转成位图；本来就是位图的不复制                         | 像素一致、位图路径不回读                        | `tests/readback-host.test.ts`「位图载体原样交出（不复制、不回读）」                          |
-| 设备句柄不是 2D 画布 → 回读明确报错，不交黑帧                        | 抛出指明替代路径的错误                          | `tests/readback-host.test.ts`「非 2D 设备明确报错，而不是交一张黑帧」                        |
+| 2D 画布直接读出像素，不经过接收画布                                  | 接收画布收到 0 次绘制                           | `tests/readback-host.test.ts`「2D 画布句柄回读出同一份像素，且不经过接收画布」              |
+| 设备句柄不是 2D 画布但能画进画布 → 借绘制搬进接收画布再读，像素与 alpha 一致 | 接收画布收到 1 次绘制 | `tests/readback-host.test.ts`「非 2D 画布借绘制搬进接收画布再读」 |
+| 既没有 2D 上下文、也画不进画布的对象 → 回读明确报错，不交黑帧 | 抛出指明替代路径的错误 | `tests/readback-host.test.ts`「既没有 2D 上下文、也画不进画布的对象明确报错」 |
 | 同一组输入两次封装字节完全相同                                       | 两次 `fileBytes` 逐字节相等                     | `tests/apng-exporter.test.ts`「同一组输入两次封装得到完全相同的字节」                        |
 | 透明 webm 在轨道上声明 AlphaMode，块走 BlockGroup 带 alpha 平面      | 轨道元素出现 AlphaMode、块带附加数据            | `tests/webm-muxer.test.ts`「透明档在轨道上声明 AlphaMode」                                   |
 | 透明 webm 多开一路编码器，把 alpha 铺进 RGB 三通道                   | 第二路编码器的输入每像素三通道等于原 alpha      | `tests/webm-exporter.test.ts`「多开一个编码器，把 alpha 铺进 RGB 三通道」                    |
@@ -108,7 +110,9 @@ await render(scene, {
 });
 ```
 
-回读只在 2D 画布上可行。`createThreeCompositor` 这类 GPU 合成器交出的 `renderer.domElement` 拿不到 2D 上下文，回读会明确报错并指出替代路径——这不是缺陷，是「设备侧载体不承诺 CPU 可读」这条约定生效的地方。
+回读对**任何画布**都成立，不挑后端。能直接 `getContext("2d")` 的句柄一次性取出像素、不经过接收画布；WebGL 与其它画布则先 `drawImage` 拷进一张自持的 2D 画布再读——那一拷贝是像素进 CPU 的唯一通路，不是降级：合成仍然发生在原来的后端，合成器也不知道帧来源侧在做什么。所以透明出片既可以配 `createCanvas2dCompositor`，也可以配 `createThreeCompositor`。
+
+回读会明确报错的只有一种情况：句柄根本不是画布（自定义句柄、原生窗口之类既没有 2D 上下文、也画不进 2D 画布）。这时要逐像素产物就让帧来源自己交位图，而不是让导出器兜底。
 
 ### 「干净」是哪种干净
 
@@ -151,13 +155,13 @@ await render(scene, {
 
 | 导出器                  | 产物                   | 保 alpha                | 音轨   | 代价                                 |
 | ----------------------- | ---------------------- | ----------------------- | ------ | ------------------------------------ |
-| `ApngExporter`          | 单文件动图             | 是                      | 无     | 每帧压一遍扫描线，内存随帧数线性增长 |
+| `ApngExporter`          | 单文件动图             | 是                      | 无     | 每帧压一遍扫描线；攒的是压缩后字节   |
 | `WebmExporter`          | webm（VP8/VP9 + Opus） | 声明 `alpha: true` 才保 | 有     | 颜色 + alpha 两路编码，耗时按两路算  |
 | `FrameSequenceExporter` | 逐帧原始 RGBA + 元数据 | 是                      | 无     | 像素全留内存；不落成单个视频文件     |
 | `WebCodecsExporter`     | mp4（H.264 / AAC）     | 否                      | 有     | 声明透明会被首帧守卫拦下             |
 | 自定义 `Exporter`       | 你说的算               | 看封装与实例声明        | 看实现 | 自己实现 `writeFrame` / `finalize`   |
 
-两条透明路径的完整装配在示例里：`examples/browser/export-alpha.ts`（同一个 `render` 调两次，只换导出器与封装声明）、`examples/browser/export-ui.ts`（三条出片路径共用一份互斥与下载），演示片段见 `examples/browser/ledger/demo.ts`——它取整片开头几镜单独成片，因为 APNG 的内存随帧数线性增长，整片一次性出不划算。
+两条透明路径的完整装配在示例里：`examples/browser/export-alpha.ts`（同一个 `render` 调两次，只换导出器与封装声明，走的是整片）、`examples/browser/export-ui.ts`（三条出片路径共用一份互斥与下载）。剧本侧的差别只有一层：透明那两份用 `makeMaterialStage` 装配，剧本里就没有压暗遮罩那一层（`examples/browser/ledger/scrim`）——要不要压暗由剧本加不加这一层决定，不由装配开关决定。
 
 ## 反例
 
