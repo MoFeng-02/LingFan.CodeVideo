@@ -30,9 +30,12 @@
 | 声明 `alpha` 时随 `FrameHostInfo.alpha` 交给宿主，不声明则不带这个键 | 宿主收到的信息里该键存在/不存在 | `tests/alpha-frames.test.ts`「声明 alpha 时随 FrameHostInfo 交给宿主」 |
 | 合成宿主把 alpha 转成合成器 `begin` 的参数，显式 `options.alpha` 优先 | 合成器 begin 收到的 alpha 取值 | `tests/alpha-frames.test.ts`「合成宿主把 alpha 交给合成器的 begin」 |
 | Canvas2D 合成器按 alpha 档创建上下文（建场时定死，不是每帧切换） | 上下文创建参数随声明变化 | `tests/alpha-frames.test.ts`「Canvas2D 合成器按 alpha 档创建上下文」 |
-| 回读宿主把句柄转成位图；本来就是位图的原样交出（不复制） | 像素一致、位图路径的回读次数为 0 | `tests/readback-host.test.ts` |
-| 回读宿主包装带生命周期的宿主时，`begin`/`close` 原样透传 | 内层的 begin/close 各被调用一次 | `tests/readback-host.test.ts` |
-| 设备句柄不是 2D 画布 → 回读明确报错，不交黑帧 | 抛出指明替代路径的错误 | `tests/readback-host.test.ts` |
+| 回读宿主把句柄转成位图；本来就是位图的原样交出（不复制） | 像素一致、位图路径的回读次数为 0 | `tests/readback-host.test.ts`「位图载体原样交出（不复制、不回读）」 |
+| 2D 画布句柄直接读出像素，不经过接收画布 | 接收画布收到 0 次绘制 | `tests/readback-host.test.ts`「2D 画布句柄回读出同一份像素，且不经过接收画布」 |
+| 非 2D 画布（WebGL 等）借绘制搬进接收画布再读，像素与 alpha 一致 | 接收画布收到 1 次绘制 | `tests/readback-host.test.ts`「非 2D 画布借绘制搬进接收画布再读」 |
+| 既没有 2D 上下文、也画不进画布的对象 → 回读明确报错，不交黑帧 | 抛出指明替代路径的错误 | `tests/readback-host.test.ts`「既没有 2D 上下文、也画不进画布的对象明确报错」 |
+| 回读宿主包装带生命周期的宿主时，`begin`/`close` 原样透传 | 内层的 begin/close 各被调用一次 | `tests/readback-host.test.ts`「包装带生命周期的宿主时，begin/close 原样透传」 |
+| 回读后的帧能被 APNG 收下，alpha 落进产物 | 端到端一帧的产物含 alpha | `tests/readback-host.test.ts`「端到端：回读后的帧能被 APNG 收下，alpha 落进产物」 |
 | 句柄载体贴到目标画布，位图载体走 `putImageData` | 两条路的落点不同、内容一致 | `tests/preview-blit.test.ts` |
 | 剧本声明了层而宿主没给面对应的面 → 明确报错，不静默少画一层 | 渲染以错误结束 | `tests/layers-decl.test.ts` |
 | 只注入 `painter`、不给 `canvas`、不开 `headless` 也能出帧 | 渲染成功且像素只由 `painter` 决定 | `tests/backend-port.test.ts` |
@@ -194,7 +197,7 @@ await render(scene, {
 - `FrameHostInfo.headless`：本次是否无呈现推演。
 - `FrameHostInfo.alpha`：本次推演要求的输出透明度，取自 `RenderOptions.alpha`；省略 = `"opaque"`。它不是渲染技巧而是画布语义：`"opaque"` 每帧从不透明黑开始、未覆盖处 alpha 恒 255；`"alpha"` 每帧从全透明开始、未覆盖处保持透明。宿主据此决定合成器建场时用哪种「干净」画布——上下文/设备的 alpha 能力在创建时定死，所以它是 `begin` 参数而不是每帧参数。
 - 两档的共同不变量：每帧从干净画布开始，输出与上一帧无关。透明档只是把「干净」定义成全透明，不是「不清屏」。
-- 要逐像素产物（APNG、自己的落盘）而合成器交的是句柄时，用 `createReadbackHost(inner)` 把帧来源包一层：它在帧来源这一侧完成回读，生命周期 `begin` / `close` 原样透传给内层。回读只对 2D 画布可行，GPU 设备与原生窗口拿不到 `getImageData`，这时明确报错而不是交黑帧。
+- 要逐像素产物（APNG、自己的落盘）而合成器交的是句柄时，用 `createReadbackHost(inner)` 把帧来源包一层：它在帧来源这一侧完成回读，生命周期 `begin` / `close` 原样透传给内层。回读对任何画布都成立，不挑后端：2D 画布直接 `getImageData`，WebGL 等先 `drawImage` 拷进一张自持的 2D 画布再读（合成仍发生在原后端）。只有「既没有 2D 上下文、也画不进画布」的自定义句柄会明确报错，而不是交黑帧。
 - `FrameHostInfo.layers`：剧本层声明的编译产物，时刻是绝对故事时间；缺省 = 无声明。宿主按 `id` 配对，剧本声明了层而宿主没给面对应的面 → 明确报错，不静默少画一层。
 - `Painter` 的两种形态由引擎判别：函数视为纯来源，带 `begin` / `frame` / `close` 的对象视为宿主。
 - 缺省路径：不给 `painter` 时从绘制目标画布的 2D 上下文回读；既无 `painter` 又无 2D 上下文时按 `frames` 取值决定报错还是交占位位图（缺省 `"required"` = 报错）。

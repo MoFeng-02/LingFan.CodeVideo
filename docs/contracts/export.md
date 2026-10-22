@@ -218,7 +218,7 @@ void result.output; // Blob，video/webm：VP9 颜色轨 + 一条 alpha 侧通�
 - `Exporter.alpha`：可选项，声明**这个实例的产物是否携带 alpha**。省略即不携带。格式只是必要条件不是充分条件——同一种封装可以在建实例时选带不带 alpha（`new WebmExporter({ ..., alpha: true })` 才装 alpha 侧通道）。引擎拿它和 `RenderOptions.alpha` 对账，对不上在首帧前就报错。
 - 透明产物：产物能不能带 alpha 由封装与实例声明共同决定，不由导出器努力程度决定。H.264/mp4 结构上没有 alpha 通道，透明区域进编码器只会被填黑；WebM 的 alpha 是并行侧通道（第二条只含关键帧的编码流，容器里落在 BlockAdditions），要在编码器与容器两侧都声明；APNG 与逐帧位图直接保留 RGBA 的 alpha。所以声明 `alpha: "alpha"` 却配了装不下 alpha 的导出器会在首帧前报 `spec_violation`。
 - 透明 WebM 的两路编码：颜色轨与 alpha 轨按时间戳配对，配不齐在收尾时明确报错（不会静默丢一半）。alpha 轨编码成本单列一个码率上限（`alphaBitrate`），透明档导出要按两路算耗时。
-- 逐像素封装的代价：APNG 每帧要压一遍扫描线并在内存驻留到 `finalize`，内存随帧数线性增长。长片要透明就分段出，或改用 WebM 那一路（边编边写、内存不随帧数增长）。
+- 逐像素封装的代价：APNG 每帧要压一遍扫描线。压好的块边写边攒（攒的是压缩后字节，不是原始 RGBA × 帧数），收尾时才把动画控制块插到帧块之前——总帧数因此不必提前声明。长片要透明仍可优先考虑 WebM 那一路（边编边写、内存不随帧数增长）。
 - 有声音 + APNG：APNG 没有音轨，`writeAudio` 被调用即报错而不是静默丢音轨。要**带声音的透明成片**用 `WebmExporter`（Opus 音轨 + alpha 侧通道），这是本仓唯一同时装得下音轨与 alpha 的适配器。
 - WebM 音频固定 48kHz：Opus 的采样率写死在码流头里，48kHz 之外的输入在首块即报 `spec_violation`，不做静默重采样。
 - 确定性前提：位图路径逐字节可比；APNG 是纯内存封装、无编码器参与，因此同一组输入两次封装字节完全相同；mp4 与 webm 两路受编码器与容器影响，比对用帧指纹而不是比较文件字节。
